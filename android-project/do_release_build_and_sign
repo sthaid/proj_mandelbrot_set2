@@ -1,6 +1,6 @@
 #!/bin/bash
 
-cd SDL2-2.0.12/build/org.sthaid.reversi
+cd SDL2-2.0.12/build/org.sthaid.mbs2
 
 echo "CREATE VERSION FILE app/jni/src/version.c"
 echo "char *version = \"`git log -1 --format=%h`\";" > app/jni/src/version.c
@@ -22,7 +22,7 @@ $ANDROID_HOME/build-tools/30.0.2/zipalign \
 echo
 
 echo "SIGN"
-$ANDROID_HOME/build-tools/30.0.2/apksigner sign --ks ../../../reversi.keystore \
+$ANDROID_HOME/build-tools/30.0.2/apksigner sign --ks ../../../mbs2.keystore \
    ./app/build/outputs/apk/release/app-release-aligned.apk 
 if [ $? -ne 0 ]; then
   echo "*** ERROR SIGN FAILED ***"

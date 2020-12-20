@@ -1,6 +1,6 @@
 #!/bin/bash
 
-cd SDL2-2.0.12/build/org.sthaid.reversi
+cd SDL2-2.0.12/build/org.sthaid.mbs2
 
 echo "char *version = \"`git log -1 --format=%h`\";" > app/jni/src/version.c
 

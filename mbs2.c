@@ -759,10 +759,10 @@ static void render_hndlr_help(pane_cx_t *pane_cx)
 
     #define SDL_EVENT_SCROLL_WHEEL (SDL_EVENT_USER_DEFINED + 0)
 
-    // read mbs_help.txt, on first call
+    // read mbs2_help.txt, on first call
     if (first_call) {
-        if ((fp = fopen("mbs_help.txt", "r")) == NULL) {
-            FATAL("failed open mbs_help.txt, %s\n", strerror(errno));
+        if ((fp = fopen("mbs2_help.txt", "r")) == NULL) {
+            FATAL("failed open mbs2_help.txt, %s\n", strerror(errno));
         }
         for (row = 0; fgets(s,sizeof(s),fp); row++) {
             len = strlen(s);
@@ -771,7 +771,7 @@ static void render_hndlr_help(pane_cx_t *pane_cx)
                 len--;
             }
             if (row >= MAX_LINE) {
-                FATAL("too many lines in mbs_help.txt\n");
+                FATAL("too many lines in mbs2_help.txt\n");
             }
             line[row] = malloc(len+1);
             strcpy(line[row], s);

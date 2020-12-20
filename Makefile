@@ -7,7 +7,7 @@ CFLAGS = -Wall -g -O2 -Iutil -I.
 util/util_sdl.o: CFLAGS += $(shell sdl2-config --cflags)
 #util/util_sdl.o: CFLAGS += -DENABLE_UTIL_SDL_BUTTON_SOUND
 
-SRC_MBS2 = mbs.c \
+SRC_MBS2 = mbs2.c \
            eval.c \
            cache.c \
            util/util_jpeg.c \
