@@ -2,3 +2,4 @@
 *.d
 version.c
 mbs2
+SDL2-2.0.12

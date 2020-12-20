@@ -260,7 +260,9 @@ void sdl_get_window_size(int32_t *w, int32_t *h)
 
 void sdl_full_screen(bool enable)
 {
+#ifndef ANDROID
     SDL_SetWindowFullscreen(sdl_window, enable ? SDL_WINDOW_FULLSCREEN_DESKTOP : 0);
+#endif
 }
 
 void sdl_get_max_texture_dim(int32_t * max_texture_dim)

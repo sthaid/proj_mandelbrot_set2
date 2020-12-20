@@ -65,7 +65,7 @@ typedef struct {
 } spiral_t;
 
 typedef struct {
-    complex          ctr;
+    complex_t        ctr;
     int              zoom;
     double           pixel_size;
     spiral_t         phase1_spiral;
@@ -89,21 +89,21 @@ typedef struct {
 // variables
 //
 
-static complex  cache_ctr;
-static int      cache_zoom;
-static int      cache_win_width;
-static int      cache_win_height;
-static cache_t  cache[MAX_ZOOM];
+static complex_t cache_ctr;
+static int       cache_zoom;
+static int       cache_win_width;
+static int       cache_win_height;
+static cache_t   cache[MAX_ZOOM];
 
-static spiral_t cache_initial_spiral;
-static int      cache_thread_request;
-static bool     cache_thread_first_phase1_zoom_lvl_finished;
-static bool     cache_thread_all_finished;
+static spiral_t  cache_initial_spiral;
+static int       cache_thread_request;
+static bool      cache_thread_first_phase1_zoom_lvl_finished;
+static bool      cache_thread_all_finished;
 
-static int      cache_status_phase_inprog;
-static int      cache_status_zoom_lvl_inprog;
+static int       cache_status_phase_inprog;
+static int       cache_status_zoom_lvl_inprog;
 
-static char     cache_dir[200];
+static char      cache_dir[200];
 
 //
 // prototypes
@@ -150,7 +150,7 @@ void cache_init(double pixel_size_at_zoom0)
 
 // -----------------  PARAMETER CHANGE  -----------------------------------------------
 
-void cache_param_change(complex ctr, int zoom, int win_width, int win_height, bool force)
+void cache_param_change(complex_t ctr, int zoom, int win_width, int win_height, bool force)
 {
     int z;
 
@@ -250,6 +250,8 @@ static void cache_file_init(void)
     struct dirent *de;
     char          *home_dir, cmd[1000];
 
+return; //XXX
+
     // this routine enumerates the $HOME/.mbs2_cache/mbs_nnnn.dat files, and
     //  for each of these files the cache_file_info_t (header) is read 
     //  and validated and saved in the global file_info[] array;
@@ -343,7 +345,7 @@ static void cache_file_init(void)
     }
 }
 
-int cache_file_create(complex ctr, int zoom, double zoom_fraction, int wavelen_start, int wavelen_scale,
+int cache_file_create(complex_t ctr, int zoom, double zoom_fraction, int wavelen_start, int wavelen_scale,
                       unsigned int *dir_pixels)
 {
     int                fd, idx;
@@ -632,7 +634,7 @@ static void *cache_thread(void *cx)
     #define COMPUTE_MBSVAL(_idx_a,_idx_b,_cp) \
         do { \
             if ((*(_cp)->mbsval)[_idx_b][_idx_a] == MBSVAL_NOT_COMPUTED) { \
-                complex c; \
+                complex_t c; \
                 c = ((((_idx_a)-(CACHE_WIDTH/2)) * (_cp)->pixel_size) -  \
                      (((_idx_b)-(CACHE_HEIGHT/2)) * (_cp)->pixel_size) * I) +  \
                     cache_ctr; \

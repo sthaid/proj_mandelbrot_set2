@@ -6,6 +6,10 @@
 // defines
 //
 
+#ifdef ANDROID
+#define main SDL_main
+#endif
+
 #define DEFAULT_WIN_WIDTH         1500
 #define DEFAULT_WIN_HEIGHT        1000 
 
@@ -36,7 +40,6 @@ static int     win_height  = DEFAULT_WIN_HEIGHT;
 static bool    full_screen = true;
 
 static double  pixel_size_at_zoom0;
-
 
 //
 // prototypes
@@ -77,8 +80,8 @@ int main(int argc, char **argv)
     // -g NNNxNNN  : window size
     // -d          : debug mode
     while (true) {
-        char opt_char = getopt(argc, argv, "g:d");
-        if (opt_char == -1) {
+        unsigned char opt_char = getopt(argc, argv, "g:d");
+        if (opt_char == 0xff) {
             break;
         }
         switch (opt_char) {
@@ -88,10 +91,11 @@ int main(int argc, char **argv)
                 FATAL("-g %s invalid\n", optarg);
             }
             full_screen = false;
+            INFO("getopt: geometry %dx%d\n", win_width, win_height);
             break; }
         case 'd':
             debug_enabled = true;
-            DEBUG("debug_enabled = true\n");
+            INFO("getopt: debug_enabled = true\n");
             break;
         default:
             return 1;
@@ -104,8 +108,8 @@ int main(int argc, char **argv)
     if (sdl_init(&win_width, &win_height, false, true, false) < 0) {
         FATAL("sdl_init %dx%d failed\n", win_width, win_height);
     }
-    DEBUG("requested win_width=%d win_height=%d\n", requested_win_width, requested_win_height);
-    DEBUG("actual    win_width=%d win_height=%d\n", win_width, win_height);
+    INFO("requested win_width=%d win_height=%d\n", requested_win_width, requested_win_height);
+    INFO("actual    win_width=%d win_height=%d\n", win_width, win_height);
 
     // if full_screen is initially set then enter full_screen mode
     if (full_screen) {
@@ -315,14 +319,14 @@ static int          wavelen_start                = WAVELEN_START_DEFAULT;
 static int          wavelen_scale                = WAVELEN_SCALE_DEFAULT;
 static int          auto_zoom                    = AUTO_ZOOM_OFF;
 static int          auto_zoom_last               = AUTO_ZOOM_FORWARD;
-static complex      ctr                          = INITIAL_CTR;
+static complex_t    ctr                          = INITIAL_CTR;
 static int          zoom                         = 0;
 static double       zoom_fraction                = 0;
 static bool         display_info                 = false;
 static bool         debug_force_cache_thread_run = false;
 static char         display_file_name[100]       = "";
 static char         display_file_type            = -1; 
-static complex      display_file_ctr             = 0;
+static complex_t    display_file_ctr             = 0;
 static int          display_file_idx             = -1;
 static unsigned int color_lut[65536];
 

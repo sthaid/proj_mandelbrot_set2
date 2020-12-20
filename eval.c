@@ -2,9 +2,9 @@
 
 // -----------------  MANDELBROT SET EVALUATOR  -------------------------
 
-int mandelbrot_set(complex c)
+int mandelbrot_set(complex_t c)
 {
-    complex z = 0;
+    complex_t z = 0;
     double  abs_za, abs_zb;
     int     mbsval;
 

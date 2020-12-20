@@ -13,6 +13,7 @@
 #include <math.h>
 #include <pthread.h>
 #include <complex.h>
+#include <tgmath.h>
 #include <errno.h>
 #include <assert.h>
 #include <sys/types.h>
@@ -42,11 +43,13 @@
 // typedefs
 //
 
+typedef double complex complex_t;
+
 typedef struct {
     unsigned long magic;
     char          file_name[300];
     int           file_type;
-    complex       ctr;
+    complex_t     ctr;
     int           zoom;
     double        zoom_fraction;
     int           wavelen_start;
@@ -69,17 +72,17 @@ int                 max_file_info;
 // prototypes
 //
 
-int mandelbrot_set(complex c);
+int mandelbrot_set(complex_t c);
 
 void cache_init(double pixel_size_at_zoom0);
-void cache_param_change(complex ctr, int zoom, int win_width, int win_height, bool force);
+void cache_param_change(complex_t ctr, int zoom, int win_width, int win_height, bool force);
 void cache_get_mbsval(unsigned short *mbsval, int width, int height);
 void cache_status(int *phase_inprog, int *zoom_lvl_inprog);
 
 bool cache_thread_first_phase1_zoom_lvl_is_finished(void);
 bool cache_thread_all_is_finished(void);
 
-int cache_file_create(complex ctr, int zoom, double zoom_fraction, int wavelen_start, int wavelen_scale,
+int cache_file_create(complex_t ctr, int zoom, double zoom_fraction, int wavelen_start, int wavelen_scale,
                       unsigned int *dir_pixels);
 void cache_file_update(int idx, int file_type);
 void cache_file_delete(int idx);
