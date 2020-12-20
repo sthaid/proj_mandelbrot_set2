@@ -1,0 +1,7 @@
+#!/bin/bash
+
+cd SDL2-2.0.12/build/org.sthaid.reversi
+
+echo "char *version = \"`git log -1 --format=%h`\";" > app/jni/src/version.c
+
+./gradlew installDebug

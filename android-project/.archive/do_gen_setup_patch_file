@@ -1,0 +1,17 @@
+#!/bin/bash
+
+diff -Nau SDL2-2.0.12/build/org.sthaid.viewer/app/jni/src/Android.mk  \
+                  new/build/org.sthaid.viewer/app/jni/src/Android.mk \
+   > setup_files/setup.patch
+
+diff -Nau SDL2-2.0.12/build/org.sthaid.viewer/app/src/main/AndroidManifest.xml \
+                  new/build/org.sthaid.viewer/app/src/main/AndroidManifest.xml \
+   >> setup_files/setup.patch
+
+diff -Nau SDL2-2.0.12/build/org.sthaid.viewer/app/src/main/res/values/strings.xml \
+                  new/build/org.sthaid.viewer/app/src/main/res/values/strings.xml  \
+   >> setup_files/setup.patch
+
+diff -Nau SDL2-2.0.12/build/org.sthaid.viewer/app/build.gradle \
+                  new/build/org.sthaid.viewer/app/build.gradle \
+   >> setup_files/setup.patch

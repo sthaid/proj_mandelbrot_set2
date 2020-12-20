@@ -1,0 +1,22 @@
+#!/bin/bash
+
+# set directory variables
+TOP=`pwd`
+SDL_DIR=$TOP/SDL2-2.0.12
+BUILD=$SDL_DIR/build/org.sthaid.reversi
+
+# create the launcher icon
+echo "Creating launcher icons"
+set -x
+cd $BUILD/app/src/main/res
+pwd
+gcc -Wall `sdl2-config --cflags` -lSDL2 -lSDL2_ttf -lpng -o create_ic_launcher \
+     ../../../../../../../setup_files/create_ic_launcher.c
+./create_ic_launcher  mipmap-mdpi/ic_launcher.png      48
+./create_ic_launcher  mipmap-hdpi/ic_launcher.png      72
+./create_ic_launcher  mipmap-xhdpi/ic_launcher.png     96
+./create_ic_launcher  mipmap-xxhdpi/ic_launcher.png   144
+./create_ic_launcher  mipmap-xxxhdpi/ic_launcher.png  192
+rm create_ic_launcher
+echo
+

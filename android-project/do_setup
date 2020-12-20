@@ -1,0 +1,80 @@
+#!/bin/bash
+
+# set directory variables
+PACKAGE_NAME=org.sthaid.reversi
+TOP=`pwd`
+SDL_DIR=$TOP/SDL2-2.0.12
+BUILD=$SDL_DIR/build/$PACKAGE_NAME
+
+# if SDL_DIR exists it must be removed
+if [ -d $SDL_DIR ]; then
+  read -p "$SDL_DIR exists, remove and proceed with setyp (y/n)? " yn
+  if [ "$yn" != y ]; then
+    echo ABORT
+    exit 1
+  fi
+  rm -rf $SDL_DIR
+fi
+
+# extract the SDL2 src from tar file
+echo "Extracting SDL2-2.0.12.tar.gz"
+tar -xf setup_files/SDL2-2.0.12.tar.gz
+echo
+
+# create template build directory
+echo "Creating template build directory"
+touch stub.c
+$SDL_DIR/build-scripts/androidbuild.sh $PACKAGE_NAME stub.c
+rm stub.c
+echo
+
+# add additional subdirs (with source code and Android.mk), for the 
+# additional libraries that are needed, which is SDL2_ttf-2.0.15
+echo "Extractng SDL2_ttf-2.0.15.tar.gz"
+cd $BUILD/app/jni
+tar -xf $TOP/setup_files/SDL2_ttf-2.0.15.tar.gz
+echo
+
+# add symbolic links to the source code
+echo "Creating symbolic links to source code"
+cd $BUILD/app/jni/src
+rm stub.c
+ln -s ../../../../../../../main.c .
+ln -s ../../../../../../../human.c .
+ln -s ../../../../../../../cpu.c .
+ln -s ../../../../../../../old.c .
+ln -s ../../../../../../../game_utils.c .
+ln -s ../../../../../../../common.h .
+ln -s ../../../../../../../help.h .
+ln -s ../../../../../../../util/util_sdl.[ch] .
+ln -s ../../../../../../../util/util_misc.[ch] .
+echo
+
+# create assets dir, and create symbolic links to assets
+echo "Creating assets directory"
+cd $BUILD/app/src/main
+mkdir assets
+cd assets
+ln -s ../../../../../../../../reversi.book .
+
+# patch android build files
+echo "Applying patches to template build directory"
+cd $SDL_DIR
+patch -p1 < $TOP/setup_files/setup.patch
+echo
+
+# create the launcher icon
+echo "Creating launcher icons"
+cd $TOP/setup_files
+RES_PATH=$BUILD/app/src/main/res
+gcc -Wall -g `sdl2-config --cflags` -lSDL2 -lSDL2_ttf -lpng -o create_ic_launcher create_ic_launcher.c
+./create_ic_launcher  $RES_PATH/mipmap-mdpi/ic_launcher.png      48
+./create_ic_launcher  $RES_PATH/mipmap-hdpi/ic_launcher.png      72
+./create_ic_launcher  $RES_PATH/mipmap-xhdpi/ic_launcher.png     96
+./create_ic_launcher  $RES_PATH/mipmap-xxhdpi/ic_launcher.png   144
+./create_ic_launcher  $RES_PATH/mipmap-xxxhdpi/ic_launcher.png  192
+./create_ic_launcher  google_play_store/icon_512x512.png        512
+rm create_ic_launcher
+echo
+
+echo "SETUP COMPLETE"

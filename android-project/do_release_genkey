@@ -1,0 +1,15 @@
+#!/bin/bash
+
+#
+# Notes:
+# - to list the keystore contents:
+#     keytool -list -v -keystore reversi.keystore
+#
+
+if [ -e reversi.keystore ]; then
+  echo "*** ERROR reversi.keystore exists ***"
+  exit 1
+fi
+
+keytool -genkey -v -keystore reversi.keystore -keyalg RSA -keysize 2048 -validity 10000 -alias reversi
+
