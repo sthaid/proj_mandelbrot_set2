@@ -47,12 +47,10 @@ ln -s ../../../../../../../util/util_sdl.[ch] .
 ln -s ../../../../../../../util/util_misc.[ch] .
 echo
 
-# create assets dir, and create symbolic links to assets
-echo "Creating assets directory"
+# create symbolic link to assets directory
+echo "Creating symbolic link to assets directory"
 cd $BUILD/app/src/main
-mkdir assets
-cd assets
-ln -s ../../../../../../../../mbs2_help.txt .
+ln -s ../../../../../../../assets .
 
 # patch android build files
 echo "Applying patches to template build directory"
