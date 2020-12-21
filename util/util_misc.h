@@ -94,6 +94,7 @@ void list_asset_files_free(int32_t max, char **pathnames);
 
 asset_file_t *read_asset_file(char * pathname);
 void read_asset_file_free(asset_file_t * f);
+char * read_file_line(asset_file_t *f, char *str, size_t strsize);
 
 // -----------------  INTERNAL STORAGE SUPPORT  --------------------------
 

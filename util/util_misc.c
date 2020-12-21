@@ -117,21 +117,18 @@ void logmsg(char *lvl, const char *func, char *fmt, ...)
 // when an error occurs
 
 #ifndef ANDROID
-void list_asset_files(char *location_arg, int32_t *max, char ***pathnames)
+void list_asset_files(char *location, int32_t *max, char ***pathnames)
 {
     DIR           * dir;
     struct dirent * dirent;
     int32_t         ret;
     struct stat     buf;
     char            filename[300];
-    char            location[300];
+    char            tmpfn[300];
+    char            dirpath[300];
 
-    if (location_arg[0] == '\0') {
-        sprintf(location, "assets", location_arg);
-    } else {
-        sprintf(location, "assets/%s", location_arg);
-    }
-    INFO("location %s\n", location);
+    sprintf(dirpath, "assets/%s", location);
+    INFO("dirpath %s\n", dirpath);
 
     *max = 0;
     *pathnames = calloc(1000,sizeof(char*)); //xxx realloc if needed
@@ -140,21 +137,26 @@ void list_asset_files(char *location_arg, int32_t *max, char ***pathnames)
         return;
     }
 
-    dir = opendir(location);
+    dir = opendir(dirpath);
     if (dir == NULL) {
-        ERROR("opendir %s, %s\n", location, strerror(errno));
+        ERROR("opendir %s, %s\n", dirpath, strerror(errno));
         free(*pathnames);
         *pathnames = NULL;
         return;
     }
 
     while ((dirent = readdir(dir)) != NULL) {
-        sprintf(filename, "%s/%s", location, dirent->d_name);
+        if (location[0] == '\0') {
+            sprintf(filename, "%s", dirent->d_name);
+        } else {
+            sprintf(filename, "%s/%s", location, dirent->d_name);
+        }
         INFO("filename '%s'\n", filename);
 
-        ret = stat(filename, &buf);
+        sprintf(tmpfn, "assets/%s", filename);
+        ret = stat(tmpfn, &buf);
         if (ret != 0 || !S_ISREG(buf.st_mode)) {
-            INFO("%s is not a regular file\n", filename);
+            INFO("%s is not a regular file\n", tmpfn);
             continue;
         }
 
@@ -242,7 +244,7 @@ void list_asset_files_free(int32_t max, char **pathnames)
 
 // - - - - - - - - -  READ ASSET FILES   - - - - - - - - - - - - - - 
 
-asset_file_t * read_asset_file(char * pathname)
+asset_file_t * read_asset_file(char * pathname_arg)
 {
     #define MAX_BUFF  20000000  //xxx check for overflow
 
@@ -250,6 +252,13 @@ asset_file_t * read_asset_file(char * pathname)
     void         * buff;
     SDL_RWops    * rw;
     size_t         len;
+    char           pathname[300];
+
+#ifndef ANDROID
+    sprintf(pathname, "assets/%s", pathname_arg);
+#else
+    sprintf(pathname, "%s", pathname_arg);
+#endif
 
     buff = malloc(MAX_BUFF);
     f = calloc(1,sizeof(asset_file_t));
@@ -293,31 +302,36 @@ void read_asset_file_free(asset_file_t * f)
     free(f);
 }
 
+// - - - - - - - - -  READ FILE LINES FROM MEMORY BUFFER   - - - - - 
 
-#if 0
-// XXX tbd
-char * read_file_line(file_t * f)
+char * read_file_line(asset_file_t *f, char *str, size_t strsize)
 {
-    File_t * F = f;
-    char   * s;
-    char   * tmp;
+    int32_t cnt = 0;
 
-    if (F->buff[F->offset] == '\0') {
+    // return NULL if at end of file
+    if (f->offset >= f->len) {
         return NULL;
     }
 
-    s = &F->buff[F->offset];
-    tmp = strchr(s, '\n');
-    if (tmp != NULL) {
-        *tmp = 0;
-        F->offset = tmp - F->buff + 1;
-    } else {
-        F->offset = s + strlen(s) - F->buff;
+    // copy chars to return buffer until newline char or EOF
+    while (true) {
+        if (f->offset == f->len) {
+            break;
+        }
+        if (f->buff[f->offset] == '\n') {
+            f->offset++;
+            break;
+        }
+        if (cnt < strsize-1) {
+            str[cnt++] = f->buff[f->offset];
+        }
+        f->offset++;
     }
 
-    return s;
+    // null terminate, and return 
+    str[cnt] = '\0';
+    return str;
 }
-#endif
 
 // -----------------  INTERNAL STORAGE SUPPORT  --------------------------
 

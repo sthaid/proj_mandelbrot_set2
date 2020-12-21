@@ -750,39 +750,21 @@ static int max_help_row;
 
 static void render_hndlr_help(pane_cx_t *pane_cx)
 {
-    #define MAX_LINE 1000
-
-    FILE *fp;
-    char s[200];
-    int row, len, y;
+    char strbuff[100], *s;
+    int row, y;
     rect_t * pane = &pane_cx->pane;
 
-    static char *line[MAX_LINE];
-    static bool first_call = true;
+    static asset_file_t *f;
     static int last_display_select_count;
 
     #define SDL_EVENT_SCROLL_WHEEL (SDL_EVENT_USER_DEFINED + 0)
 
-    // read mbs2_help.txt, on first call
-    if (first_call) {
-        if ((fp = fopen("mbs2_help.txt", "r")) == NULL) {
-            FATAL("failed open mbs2_help.txt, %s\n", strerror(errno));
+    // read help.txt, on first call
+    if (f == NULL) {
+        f = read_asset_file("help.txt");
+        if (f == NULL) {
+            FATAL("read_asset_file failed for help.txt\n");
         }
-        for (row = 0; fgets(s,sizeof(s),fp); row++) {
-            len = strlen(s);
-            if (len > 0 && s[len-1] == '\n') {
-                s[len-1] = '\0';
-                len--;
-            }
-            if (row >= MAX_LINE) {
-                FATAL("too many lines in mbs2_help.txt\n");
-            }
-            line[row] = malloc(len+1);
-            strcpy(line[row], s);
-        }
-        fclose(fp);
-        max_help_row = row;
-        first_call = false;
     }
 
     // if re-entering help display then reset y_top_help to 0
@@ -792,13 +774,21 @@ static void render_hndlr_help(pane_cx_t *pane_cx)
     }
 
     // display the help text
-    for (row = 0; row < max_help_row; row++) {
+    f->offset = 0;
+    for (row = 0; ; row++) {
+        s = read_file_line(f, strbuff, sizeof(strbuff));
+        if (s == NULL) {
+            break;
+        }
         y = y_top_help + ROW2Y(row,20);
         if (y <= -ROW2Y(1,20) || y >= pane->h) {
             continue;
         }
-        sdl_render_printf(pane, 0, y, 20, SDL_WHITE, SDL_BLACK, "%s", line[row]);
+        sdl_render_printf(pane, 0, y, 20, SDL_WHITE, SDL_BLACK, "%s", s);
     }
+
+    // save max_help_row for use below to limit the scrolling range
+    max_help_row = row;
 
     // register for mouse wheel scrool event
     sdl_register_event(pane, pane, SDL_EVENT_SCROLL_WHEEL, SDL_EVENT_TYPE_MOUSE_WHEEL, pane_cx);
