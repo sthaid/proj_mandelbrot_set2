@@ -4,6 +4,7 @@ CC = gcc
 OUTPUT_OPTION=-MMD -MP -o $@
 CFLAGS = -Wall -g -O2 -Iutil -I.
 
+util/util_misc.o: CFLAGS += $(shell sdl2-config --cflags)
 util/util_sdl.o: CFLAGS += $(shell sdl2-config --cflags)
 #util/util_sdl.o: CFLAGS += -DENABLE_UTIL_SDL_BUTTON_SOUND
 

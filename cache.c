@@ -110,6 +110,7 @@ static char      cache_dir[200];
 //
 
 static void cache_file_init(void);
+static void cache_file_copy_assets_to_internal_storage(void);
 
 static void cache_adjust_mbsval_ctr(cache_t *cp);
 
@@ -244,44 +245,19 @@ static int compare(const void *arg1, const void *arg2)
 
 static void cache_file_init(void)
 {
-    struct stat    statbuf;
     int            rc, idx, file_num, max_file, file_num_array[1000];
     DIR           *d;
     struct dirent *de;
-    char          *home_dir, cmd[1000];
 
-return; //XXX
+    // set the location of the cache_dir to the internal_storage_path, which is either
+    // - $HOME/.mbs2  on Linux, or
+    // - /data/data/org.sthaid.mbs2/files    on Android
+    strcpy(cache_dir, get_internal_storage_path());
 
-    // this routine enumerates the $HOME/.mbs2_cache/mbs_nnnn.dat files, and
-    //  for each of these files the cache_file_info_t (header) is read 
-    //  and validated and saved in the global file_info[] array;
-    // the file_info array is sorted by the file number 'nnnn'
-
-    // create pathname foe cache_dir
-    home_dir = getenv("HOME");
-    if (home_dir == NULL) {
-        FATAL("env var HOME not set\n");
-    }
-    sprintf(cache_dir, "%s/.mbs2_cache", home_dir);
-
-    // if cache_dir doesn't already exist then
-    //   copy the local .mbs2_cache to $HOME
-    // endif
-    rc = stat(cache_dir, &statbuf);
-    if (rc == 0 && (statbuf.st_mode & S_IFDIR) == 0) {
-        FATAL("%s exists and is not a directory\n", cache_dir);
-    }
-    if (rc < 0 && errno == ENOENT) {
-        rc = stat("./.mbs2_cache", &statbuf);
-        if (rc < 0) {
-            FATAL("git repo dir ./.mbs2_cache does not exist\n");
-        }
-        sprintf(cmd, "cp -r .mbs2_cache %s", home_dir);
-        rc = system(cmd);
-        if (rc != 0) {
-            FATAL("cmd '%s' failed, rc=%d exitstatus=%d\n", cmd, rc, WEXITSTATUS(rc));
-        }
-    }
+    // copy the asset files, that are mbs_nnnn.dat, to internal_storage;
+    // the files being copied are the samples that are provided with this program,
+    //  the program's user can save additional files to internal_storage
+    cache_file_copy_assets_to_internal_storage();
 
     // get sorted list of file_num contained in the cache_dir;
     // the file_name format is 'mbs_NNNN.dat', where NNNN is the file_num
@@ -343,6 +319,57 @@ return; //XXX
         cache_file_info_t *fi = file_info[idx];
         DEBUG("idx=%d name=%s type=%d\n", idx, fi->file_name, fi->file_type);
     }
+}
+
+static void cache_file_copy_assets_to_internal_storage(void)
+{
+    int32_t max, i, fd, len;
+    char **pathnames;
+    asset_file_t *f;
+    char internal_storage_pathname[300];
+
+    // if asset files have already been copied then return
+    if (false) { //XXX tbd
+        return;
+    }
+
+    // get list of asset files in the root of the assets folder
+    list_asset_files("", &max, &pathnames);
+    if (pathnames == NULL) {
+        FATAL("list_asset_files failed\n");
+    }
+
+    // loop over the list of files, and copy those whose names are mbs_nnnn.dat to
+    // internal storage
+    for (i = 0; i < max; i++) {
+        if (strstr(pathnames[i], "mbs_") == NULL || strstr(pathnames[i], ".dat") == NULL) {
+            continue;
+        }
+
+        sprintf(internal_storage_pathname, "%s/%s", cache_dir, basename(pathnames[i]));
+        INFO("copying asset file %s to %s\n", pathnames[i], internal_storage_pathname);
+
+        f = read_asset_file(pathnames[i]);
+        if (f == NULL) {
+            FATAL("read_asset_file %s failed\n", pathnames[i]);
+        }
+
+        fd = open(internal_storage_pathname, O_WRONLY|O_CREAT|O_TRUNC, 0644);
+        if (fd < 0) {
+            FATAL("failed create %s, %s\n", internal_storage_pathname, strerror(errno));
+        }
+        len = write(fd, f->buff, f->len);
+        if (len != f->len) {
+            FATAL("failed write %s, len written %d, expected %zd, %s\n", 
+                  internal_storage_pathname, len, f->len, strerror(errno));
+        }
+        close(fd);
+
+        read_asset_file_free(f);
+    }
+
+    // free memory that was allocated by list_asset_files
+    list_asset_files_free(max, pathnames);
 }
 
 int cache_file_create(complex_t ctr, int zoom, double zoom_fraction, int wavelen_start, int wavelen_scale,

@@ -21,11 +21,15 @@
 #include <libgen.h>
 #include <fcntl.h>
 #include <sys/stat.h>
+#include <sys/types.h>
+#include <dirent.h>
 
 #include "util_misc.h"
 
-#ifdef ANDROID
 #include <SDL.h>
+
+#ifdef ANDROID
+#include <android/asset_manager_jni.h>
 #endif
 
 // -----------------  LOGMSG  --------------------------------------------
@@ -107,168 +111,250 @@ void logmsg(char *lvl, const char *func, char *fmt, ...)
 
 // -----------------  ASSET FILE SUPPORT  --------------------------------
 
+// - - - - - - - - -  LIST ASSET FILES   - - - - - - - - - - - - - - 
+
+// the list_asset_files routine returns *pathnames set to NULL 
+// when an error occurs
+
 #ifndef ANDROID
-static char *assetname_to_pathname(char *assetname, char *pathname);
-
-bool does_asset_file_exist(char *assetname)
+void list_asset_files(char *location_arg, int32_t *max, char ***pathnames)
 {
-    char pathname[500];
-    int rc;
-    struct stat statbuf;
+    DIR           * dir;
+    struct dirent * dirent;
+    int32_t         ret;
+    struct stat     buf;
+    char            filename[300];
+    char            location[300];
 
-    assetname_to_pathname(assetname, pathname);
-
-    rc = stat(pathname, &statbuf);
-
-    if (rc == -1 && errno == ENOENT) {
-        return false;
-    } else if (rc == 0 && S_ISREG(statbuf.st_mode)) {
-        return true;
+    if (location_arg[0] == '\0') {
+        sprintf(location, "assets", location_arg);
     } else {
-        FATAL("pathname %s, rc=%d, st_mode=0x%x, %s\n",
-              pathname, rc, statbuf.st_mode, strerror(errno));
+        sprintf(location, "assets/%s", location_arg);
     }
-}
+    INFO("location %s\n", location);
 
-void create_asset_file(char *assetname)
-{
-    char pathname[500];
-    int fd;
-
-    assetname_to_pathname(assetname, pathname);
-
-    INFO("creating %s\n", pathname);
-
-    fd = open(pathname, O_CREAT|O_EXCL|O_RDWR, 0644);
-    if (fd < 0) {
-        FATAL("pathname %s, %s\n", pathname, strerror(errno));
+    *max = 0;
+    *pathnames = calloc(1000,sizeof(char*)); //xxx realloc if needed
+    if (*pathnames == NULL) {
+        ERROR("calloc\n");
+        return;
     }
 
-    close(fd);
-}
-
-void *read_asset_file(char *assetname, size_t *assetsize)
-{
-    int rc, fd;
-    size_t len;
-    struct stat statbuf;
-    void *data;
-    char pathname[500];
-
-    *assetsize = 0;
-
-    assetname_to_pathname(assetname, pathname);
-
-    fd = open(pathname, O_RDONLY);
-    if (fd < 0) {
-        ERROR("open error on %s, %s\n", pathname, strerror(errno));
-        return NULL;
+    dir = opendir(location);
+    if (dir == NULL) {
+        ERROR("opendir %s, %s\n", location, strerror(errno));
+        free(*pathnames);
+        *pathnames = NULL;
+        return;
     }
 
-    rc = fstat(fd, &statbuf);
-    if (rc != 0) {
-        ERROR("stat error on %s, %s\n", pathname, strerror(errno));
-        close(fd);
-        return NULL;
-    }
+    while ((dirent = readdir(dir)) != NULL) {
+        sprintf(filename, "%s/%s", location, dirent->d_name);
+        INFO("filename '%s'\n", filename);
 
-    data = malloc(statbuf.st_size);
-    if (data == NULL) {
-        ERROR("malloc %d\n", (int)statbuf.st_size);
-        close(fd);
-        return NULL;
-    }
-
-    len = read(fd, data, statbuf.st_size);
-    if (len != statbuf.st_size) {
-        ERROR("read error, len=%zd size=%d, %s\n", len, (int)statbuf.st_size, strerror(errno));
-        free(data);
-        close(fd);
-        return NULL;
-    }
-
-    close(fd);
-    *assetsize = statbuf.st_size;
-    return data;
-}
-
-void write_asset_file(char *assetname, void *data, size_t datalen)
-{
-    int fd;
-    ssize_t len;
-    char pathname[500];
-
-    assetname_to_pathname(assetname, pathname);
-
-    if ((fd = open(pathname, O_WRONLY)) < 0) {
-        FATAL("open %s error, %s\n", pathname, strerror(errno));
-    }
-
-    lseek(fd, 0, SEEK_END);
-
-    len = write(fd, data, datalen);
-    if (len != datalen) {
-        FATAL("write error, len=%zd, %s\n", len, strerror(errno));
-    }
-
-    close(fd);
-}
-
-static char *assetname_to_pathname(char *assetname, char *pathname)
-{
-    static char progdirname[300];
-
-    if (progdirname[0] == '\0') {
-        char tmp[300], *p;
-        if (readlink("/proc/self/exe", tmp, sizeof(tmp)) < 0) {
-            FATAL("readlink, %s\n", strerror(errno));
+        ret = stat(filename, &buf);
+        if (ret != 0 || !S_ISREG(buf.st_mode)) {
+            INFO("%s is not a regular file\n", filename);
+            continue;
         }
-        p = dirname(tmp);
-        strcpy(progdirname, p);
+
+        (*pathnames)[*max] = malloc(strlen(filename)+1);
+        strcpy((*pathnames)[*max], filename);
+        (*max)++;
     }
 
-    sprintf(pathname, "%s/%s", progdirname, assetname);
-
-    return pathname;
+    closedir(dir);
 }
-#else  // ANDROID follows
-
-bool does_asset_file_exist(char *assetname)
+#else
+void list_asset_files(char *location, int32_t *max, char ***pathnames)
 {
-    FATAL("not supported\n");
-    return true;
-}
+    jmethodID       mid;
+    jobject         context;
+    jobject         java_asset_manager;
+    AAssetManager * asset_manager;
+    AAssetDir     * asset_dir;
+    const char    * fn;
+    int32_t         len;
 
-void create_asset_file(char *assetname)
-{
-    FATAL("not supported\n");
-}
+    // this code is derived from 
+    // src/core/android/SDL_android.c
 
-void *read_asset_file(char *assetname, size_t *assetsize)
-{
-    return SDL_LoadFile(assetname, assetsize);
-}
+    *max = 0;
+    *pathnames = calloc(1000,sizeof(char*));
+    if (*pathnames == NULL) {
+        ERROR("calloc\n");
+        return;
+    }
 
-void write_asset_file(char *assetname, void *data, size_t datalen)
-{
-    FATAL("not supported\n");
-}
+    // reference: https://wiki.libsdl.org/SDL_AndroidGetActivity
+    // - retrieve the JNI environment.
+    // - retrieve the Java instance of the SDLActivity
+    // - find the Java class of the activity. It should be SDLActivity or a subclass of it.
+    JNIEnv* mEnv = (JNIEnv*)SDL_AndroidGetJNIEnv();
+    jobject activity = (jobject)SDL_AndroidGetActivity();
+    jclass mActivityClass = (*mEnv)->GetObjectClass(mEnv,activity);
 
+    // not sure what this is for, it was in SDL_android.c
+    (*mEnv)->PushLocalFrame(mEnv, 16);
+
+    // context = SDLActivity.getContext(); 
+    mid = (*mEnv)->GetStaticMethodID(mEnv, mActivityClass,
+            "getContext","()Landroid/content/Context;");
+    context = (*mEnv)->CallStaticObjectMethod(mEnv, mActivityClass, mid);
+
+    // asset_manager = context.getAssets();
+    mid = (*mEnv)->GetMethodID(mEnv, (*mEnv)->GetObjectClass(mEnv, context),
+            "getAssets", "()Landroid/content/res/AssetManager;");
+    java_asset_manager = (*mEnv)->CallObjectMethod(mEnv, context, mid);
+
+    // get pointer to asset_manager
+    asset_manager = AAssetManager_fromJava(mEnv, java_asset_manager);
+
+    // open asset_dir and get the asset filenames
+    asset_dir = AAssetManager_openDir(asset_manager, location);
+    while ((fn = AAssetDir_getNextFileName(asset_dir)) != NULL) {
+        (*pathnames)[*max] = malloc(strlen(location)+strlen(fn)+2);
+        if (location[0] == '\0') {
+            sprintf((*pathnames)[*max], "%s", fn);
+        } else {
+            sprintf((*pathnames)[*max], "%s/%s", location, fn);
+        }
+        INFO("got pathane %s\n", (*pathnames)[*max]);
+        (*max)++;
+    }
+
+    // close the asset_dir
+    AAssetDir_close(asset_dir);
+
+    // not sure what this is for, it was in SDL_android.c
+    (*mEnv)->PopLocalFrame(mEnv, NULL);
+}
 #endif
+
+void list_asset_files_free(int32_t max, char **pathnames)
+{
+    int32_t i;
+    for (i = 0; i < max; i++) {
+        free(pathnames[i]);
+    }
+    free(pathnames);
+}
+
+// - - - - - - - - -  READ ASSET FILES   - - - - - - - - - - - - - - 
+
+asset_file_t * read_asset_file(char * pathname)
+{
+    #define MAX_BUFF  20000000  //xxx check for overflow
+
+    asset_file_t * f = NULL;
+    void         * buff;
+    SDL_RWops    * rw;
+    size_t         len;
+
+    buff = malloc(MAX_BUFF);
+    f = calloc(1,sizeof(asset_file_t));
+    if (buff == NULL || f == NULL) {
+        goto error;
+    }
+
+    rw = SDL_RWFromFile(pathname, "r");
+    if (rw == NULL) {
+        ERROR("open %s, %s\n", pathname, SDL_GetError());
+        goto error;
+    }
+
+    len = SDL_RWread(rw, buff, 1, MAX_BUFF);
+    if (len == 0) {
+        ERROR("read %s, len=%d\n", pathname, (int32_t)len);
+        SDL_RWclose(rw);
+        goto error;
+    }
+
+    SDL_RWclose(rw);
+
+    f->buff = buff;
+    f->len = len;
+    f->offset = 0;
+    return f;
+
+error:
+    free(f);
+    free(buff);
+    return NULL;
+}
+
+void read_asset_file_free(asset_file_t * f)
+{
+    if (f == NULL) {
+        return;
+    }
+
+    free(f->buff);
+    free(f);
+}
+
+
+#if 0
+// XXX tbd
+char * read_file_line(file_t * f)
+{
+    File_t * F = f;
+    char   * s;
+    char   * tmp;
+
+    if (F->buff[F->offset] == '\0') {
+        return NULL;
+    }
+
+    s = &F->buff[F->offset];
+    tmp = strchr(s, '\n');
+    if (tmp != NULL) {
+        *tmp = 0;
+        F->offset = tmp - F->buff + 1;
+    } else {
+        F->offset = s + strlen(s) - F->buff;
+    }
+
+    return s;
+}
+#endif
+
+// -----------------  INTERNAL STORAGE SUPPORT  --------------------------
+
+char *get_internal_storage_path(void)
+{
+    static char storage_path[200];
+
+    if (storage_path[0] != '\0') {
+        return storage_path;
+    }
+
+#ifndef ANDROID
+    char *home_dir;
+    int rc;
+    home_dir = getenv("HOME");
+    if (home_dir == NULL) {
+        FATAL("env var HOME not set\n");
+    }
+    sprintf(storage_path, "%s/%s", home_dir, ".mbs2");  // XXX  
+    rc = mkdir(storage_path, 0755);
+    if (rc < 0 && errno != EEXIST) {
+        FATAL("failed to create %s, %s\n", storage_path, strerror(errno));
+    }
+#else
+    const char *android_internal_storage_path;
+    android_internal_storage_path = SDL_AndroidGetInternalStoragePath();
+    if (android_internal_storage_path == NULL) {
+        FATAL("android internal storage path not set\n");
+    }
+    sprintf(storage_path, "%s", android_internal_storage_path);
+#endif
+
+    INFO("storage_path = '%s'\n", storage_path);
+    return storage_path;
+}
 
 // -----------------  TIME UTILS  -----------------------------------------
-
-#if 0  // not supported on Android
-uint64_t tsc_timer(void)
-{
-    unsigned long  tsc;
-    unsigned int   _eax, _edx;
-
-    asm volatile ("rdtsc" : "=a" (_eax), "=d" (_edx));
-    tsc = (unsigned long)_edx << 32 | _eax;
-    return tsc;
-}
-#endif
 
 uint64_t microsec_timer(void)
 {
@@ -338,19 +424,10 @@ int config_read(char * config_filename, config_t * config_arg, int config_versio
     char        s[100] = "";
     const char *config_dir;
 
-    // get the directory to use for the config file, and
+    // get the directory to use for the config file
+    config_dir = get_internal_storage_path();
+
     // create the config pathname
-#ifndef ANDROID
-    config_dir = getenv("HOME");
-    if (config_dir == NULL) {
-        FATAL("env var HOME not set\n");
-    }
-#else
-    config_dir = SDL_AndroidGetInternalStoragePath();
-    if (config_dir == NULL) {
-        FATAL("android internal storage path not set\n");
-    }
-#endif
     sprintf(config_path, "%s/%s", config_dir, config_filename);
 
     // save global copies of config_version_arg, and config_arg;

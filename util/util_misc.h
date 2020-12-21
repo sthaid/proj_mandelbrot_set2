@@ -83,16 +83,26 @@ void logmsg(char * lvl, const char * func, char * fmt, ...) __attribute__ ((form
 
 // -----------------  ASSET FILE SUPPORT  --------------------------------
 
-bool does_asset_file_exist(char *assetname);
-void create_asset_file(char *assetname);
-void *read_asset_file(char *assetname, size_t *assetsize);
-void write_asset_file(char *assetname, void *data, size_t datalen);
+typedef struct {
+    char * buff;
+    size_t len;
+    size_t offset;
+} asset_file_t;
+
+void list_asset_files(char *location, int32_t *max, char ***pathnames);
+void list_asset_files_free(int32_t max, char **pathnames);
+
+asset_file_t *read_asset_file(char * pathname);
+void read_asset_file_free(asset_file_t * f);
+
+// -----------------  INTERNAL STORAGE SUPPORT  --------------------------
+
+char *get_internal_storage_path(void);
 
 // -----------------  TIME  --------------------------------------
 
 #define MAX_TIME_STR 50
 
-uint64_t tsc_timer(void);
 uint64_t microsec_timer(void);
 uint64_t get_real_time_us(void);
 char * time2str(char * str, int64_t us, bool gmt, bool display_ms, bool display_date);
