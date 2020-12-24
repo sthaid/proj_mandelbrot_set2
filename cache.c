@@ -245,7 +245,7 @@ static int compare(const void *arg1, const void *arg2)
 
 static void cache_file_init(void)
 {
-    int            rc, idx, file_num, max_file, file_num_array[1000];
+    int            idx, file_num, max_file, file_num_array[1000];
     DIR           *d;
     struct dirent *de;
 
@@ -327,11 +327,35 @@ static void cache_file_copy_assets_to_internal_storage(void)
     char **pathnames;
     asset_file_t *f;
     char internal_storage_pathname[300];
+    FILE *fp;
+    extern char *version;
 
     // if asset files have already been copied then return
-    if (false) { //XXX tbd
-        return;
+    sprintf(internal_storage_pathname, "%s/version", cache_dir);
+    fp = fopen(internal_storage_pathname, "r");
+    if (fp) {
+        char ver_str[100] = "";
+        fgets(ver_str, sizeof(ver_str), fp);
+        fclose(fp);
+        INFO("XXX VERSION ver_str='%s'  version='%s'\n", ver_str, version);
+        if (strcmp(ver_str, version) == 0) {
+            INFO("asset files have already been copied, returning\n");
+            return;
+        }
+    } else {
+        INFO("XXX %s not found\n", internal_storage_pathname);
     }
+
+    // save version string in <cache_dir>/version_file, so that next time
+    // this program starts the asset files will not be copied to internal 
+    // storage again
+    INFO("creating %s file containing '%s'\n", internal_storage_pathname, version);
+    fp = fopen(internal_storage_pathname, "w");
+    if (fp == NULL) {
+        FATAL("failed to create %s, %s\n", internal_storage_pathname, strerror(errno));
+    }
+    fputs(version, fp);
+    fclose(fp);
 
     // get list of asset files in the root of the assets folder
     list_asset_files("", &max, &pathnames);
@@ -682,14 +706,14 @@ static void *cache_thread(void *cx)
     #define SPIRAL_COMPLETE_CACHE \
         (CACHE_WIDTH >= CACHE_HEIGHT ? idx_a < 0 : idx_b < 0)
 
-    cache_t      * cp;
-    int            n, idx_a, idx_b;
-    int            win_min_x, win_max_x, win_min_y, win_max_y;
-    unsigned long  start_us;
-    bool           was_stopped;
-    int            mbs_calc_count;
-    int            mbs_not_calc_count;
-    int            zoom_lvl_tbl[MAX_ZOOM];
+    cache_t * cp;
+    int       n, idx_a, idx_b;
+    int       win_min_x, win_max_x, win_min_y, win_max_y;
+    uint64_t  start_us;
+    bool      was_stopped;
+    int       mbs_calc_count;
+    int       mbs_not_calc_count;
+    int       zoom_lvl_tbl[MAX_ZOOM];
 
     while (true) {
 restart:

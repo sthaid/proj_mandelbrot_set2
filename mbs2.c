@@ -24,8 +24,22 @@
 
 #define DISPLAY_SELECT_MBS        1
 #define DISPLAY_SELECT_HELP       2
-#define DISPLAY_SELECT_COLOR_LUT  3
+//#define DISPLAY_SELECT_COLOR_LUT  3  //xxx
 #define DISPLAY_SELECT_DIRECTORY  4
+
+// xxx
+//#ifndef ANDROID
+//#define FONTSZ  60
+//#define FONTSZ_HELP 30
+//#define FONTSZ_INFO 30
+//#else
+#define FONTSZ  60
+#define FONTSZ_HELP 30
+#define FONTSZ_INFO 30
+#define FONTSZ_ALERT 60
+//#endif
+
+#define SLIDE_SHOW_INTVL_US  5000000
 
 //
 // typedefs
@@ -53,14 +67,17 @@ static void render_hndlr_mbs(pane_cx_t *pane_cx);
 static int event_hndlr_mbs(pane_cx_t *pane_cx, sdl_event_t *event);
 static void zoom_step(bool dir_is_incr);
 static void init_color_lut(int wavelen_start, int wavelen_scale, unsigned int *color_lut);
-static void display_info_proc(rect_t *pane, unsigned long update_intvl_ms);
-static void save_file(rect_t *pane);
+static void display_info_proc(rect_t *pane, uint64_t update_intvl_ms);
+static int save_file(rect_t *pane);
+static void show_file(int idx);
 
 static void render_hndlr_help(pane_cx_t *pane_cx);
 static int event_hndlr_help(pane_cx_t *pane_cx, sdl_event_t *event);
 
+#if 0 //xxx
 static void render_hndlr_color_lut(pane_cx_t *pane_cx);
 static int event_hndlr_color_lut(pane_cx_t *pane_cx, sdl_event_t *event);
+#endif
 
 static void render_hndlr_directory(pane_cx_t *pane_cx);
 static int event_hndlr_directory(pane_cx_t *pane_cx, sdl_event_t *event);
@@ -140,9 +157,9 @@ int main(int argc, char **argv)
 // -----------------  PANE_HNDLR  ---------------------------------------
 
 typedef struct {
-    char          str[200];
-    int           color;
-    unsigned long expire_us;
+    char     str[200];
+    int      color;
+    uint64_t expire_us;
 } alert_t;
 
 static int     display_select       = DISPLAY_SELECT_MBS;
@@ -193,9 +210,11 @@ static int pane_hndlr(pane_cx_t * pane_cx, int request, void * init_params, sdl_
         case DISPLAY_SELECT_HELP:
             render_hndlr_help(pane_cx);
             break;
+#if 0 //xxx
         case DISPLAY_SELECT_COLOR_LUT:
             render_hndlr_color_lut(pane_cx);
             break;
+#endif
         case DISPLAY_SELECT_DIRECTORY:
             render_hndlr_directory(pane_cx);
             break;
@@ -216,6 +235,7 @@ static int pane_hndlr(pane_cx_t * pane_cx, int request, void * init_params, sdl_
 
         // first handle events common to all displays
         switch (event->event_id) {
+#if 0
         case 'f':  // full screen
             full_screen = !full_screen;
             DEBUG("set full_screen to %d\n", full_screen);
@@ -227,7 +247,7 @@ static int pane_hndlr(pane_cx_t * pane_cx, int request, void * init_params, sdl_
         case 'h':  // display help
             display_select = (display_select == DISPLAY_SELECT_HELP
                               ? DISPLAY_SELECT_MBS : DISPLAY_SELECT_HELP);
-            display_select_count++;
+            display_select_count++;  // xxx get rid of display_select_count
             break;
         case 'c':  // display color lut
             display_select = (display_select == DISPLAY_SELECT_COLOR_LUT
@@ -245,6 +265,7 @@ static int pane_hndlr(pane_cx_t * pane_cx, int request, void * init_params, sdl_
                 display_select_count++;
             }
             break;
+#endif
 
         // it is not a common event, so call the selected event_hndlr
         default:
@@ -255,9 +276,11 @@ static int pane_hndlr(pane_cx_t * pane_cx, int request, void * init_params, sdl_
             case DISPLAY_SELECT_HELP:
                 rc = event_hndlr_help(pane_cx, event);
                 break;
+#if 0
             case DISPLAY_SELECT_COLOR_LUT:
                 rc = event_hndlr_color_lut(pane_cx, event);
                 break;
+#endif
             case DISPLAY_SELECT_DIRECTORY:
                 rc = event_hndlr_directory(pane_cx, event);
                 break;
@@ -290,62 +313,76 @@ static void set_alert(int color, char *fmt, ...)
     va_end(ap);
 
     alert.color = color;
-    alert.expire_us = microsec_timer() + 2000000;
+    alert.expire_us = microsec_timer() + 3000000;
 }
 
 static void display_alert(rect_t *pane)
 {
-    static const int alert_font_ptsize = 30;
     int x, y;
 
     if (microsec_timer() > alert.expire_us) {
         return;
     }
 
-    x = pane->w / 2 - COL2X(strlen(alert.str), alert_font_ptsize) / 2;
-    y = pane->h / 2 - ROW2Y(1,alert_font_ptsize) / 2;
-    sdl_render_printf(pane, x, y, alert_font_ptsize, alert.color, SDL_BLACK, "%s", alert.str);
+    x = pane->w / 2 - strlen(alert.str) * sdl_font_char_width(FONTSZ_ALERT) / 2;
+    y = pane->h / 2 - sdl_font_char_height(FONTSZ_ALERT) / 2;
+    sdl_render_printf(pane, x, y, FONTSZ_ALERT, alert.color, SDL_BLACK, "%s", alert.str);
 }
 
 // - - - - - - - - -  PANE_HNDLR : MBS   - - - - - - - - - - - - - - - -
 
-#define AUTO_ZOOM_OFF     0
-#define AUTO_ZOOM_FORWARD 1
-#define AUTO_ZOOM_REVERSE 2
+#define AUTO_ZOOM_OFF  0
+#define AUTO_ZOOM_IN   1
+#define AUTO_ZOOM_OUT  2
 
 #define ZOOM_TOTAL (zoom + zoom_fraction)
 
 static int          wavelen_start                = WAVELEN_START_DEFAULT;
 static int          wavelen_scale                = WAVELEN_SCALE_DEFAULT;
 static int          auto_zoom                    = AUTO_ZOOM_OFF;
-static int          auto_zoom_last               = AUTO_ZOOM_FORWARD;
+static int          auto_zoom_last               = AUTO_ZOOM_IN;
 static complex_t    ctr                          = INITIAL_CTR;
 static int          zoom                         = 0;
 static double       zoom_fraction                = 0;
 static bool         display_info                 = false;
 static bool         debug_force_cache_thread_run = false;
-static char         display_file_name[100]       = "";
+static char         display_file_name[100]       = "";  // xxx maybe not needed
 static char         display_file_type            = -1; 
 static complex_t    display_file_ctr             = 0;
 static int          display_file_idx             = -1;
+static bool         ctrls_enabled                = true;
+static bool         slide_show_enabled           = false;
+static uint64_t     slide_show_time_us           = 0;
+static int          slide_show_idx               = -1;
 static unsigned int color_lut[65536];
 
 static void render_hndlr_mbs(pane_cx_t *pane_cx)
 {
-    int            idx = 0, pixel_x, pixel_y;
-    unsigned long  time_now_us = microsec_timer();
-    unsigned long  update_intvl_ms;
-    rect_t       * pane = &pane_cx->pane;
+    int      idx = 0, pixel_x, pixel_y;
+    uint64_t time_now_us = microsec_timer();
+    uint64_t update_intvl_ms;
+    rect_t  *pane = &pane_cx->pane;
 
     static texture_t       texture;
     static unsigned int   *pixels;
     static unsigned short *mbsval;
-    static unsigned long   last_update_time_us;
+    static uint64_t        last_update_time_us;
     static unsigned int    last_display_select_count;
 
-    #define SDL_EVENT_CENTER   (SDL_EVENT_USER_DEFINED + 0)
-    #define SDL_EVENT_PAN      (SDL_EVENT_USER_DEFINED + 1)
-    #define SDL_EVENT_ZOOM     (SDL_EVENT_USER_DEFINED + 2)
+    // xxx organize the order
+    #define SDL_EVENT_MBS_CTRLS             (SDL_EVENT_USER_DEFINED + 0)
+    #define SDL_EVENT_MBS_SHOW_NEXT_FILE    (SDL_EVENT_USER_DEFINED + 1)
+    #define SDL_EVENT_MBS_SHOW_PRIOR_FILE   (SDL_EVENT_USER_DEFINED + 2)
+    #define SDL_EVENT_MBS_HELP              (SDL_EVENT_USER_DEFINED + 3)
+    #define SDL_EVENT_MBS_INFO              (SDL_EVENT_USER_DEFINED + 4)
+    #define SDL_EVENT_MBS_FILES             (SDL_EVENT_USER_DEFINED + 5)
+    #define SDL_EVENT_MBS_ZOOM_AUTO         (SDL_EVENT_USER_DEFINED + 6)
+    #define SDL_EVENT_MBS_ZOOM_IN           (SDL_EVENT_USER_DEFINED + 7)
+    #define SDL_EVENT_MBS_ZOOM_OUT          (SDL_EVENT_USER_DEFINED + 8)
+    #define SDL_EVENT_MBS_PAN               (SDL_EVENT_USER_DEFINED + 9)
+    #define SDL_EVENT_MBS_MOUSE_WHEEL_ZOOM  (SDL_EVENT_USER_DEFINED + 10)
+    #define SDL_EVENT_MBS_SLIDE_SHOW        (SDL_EVENT_USER_DEFINED + 11)
+    #define SDL_EVENT_MBS_SAVE              (SDL_EVENT_USER_DEFINED + 12)
 
     // if re-entering mbs display then reset/init stuff
     if (display_select_count != last_display_select_count) {
@@ -379,17 +416,32 @@ static void render_hndlr_mbs(pane_cx_t *pane_cx)
         mbsval = malloc(pane->w*pane->h*2);
     }
 
-    // if auto_zoom is enabled then increment or decrement the zoom until limit is reached
+    // if auto_zoom is enabled then increment or decrement the zoom until limit is reached xxx comment
+    // xxx kill off auto zoom in slide show
     if (auto_zoom != AUTO_ZOOM_OFF) {
-        zoom_step(auto_zoom == AUTO_ZOOM_FORWARD);
-        if (ZOOM_TOTAL == 0 || ZOOM_TOTAL == (MAX_ZOOM-1)) {
-            auto_zoom = AUTO_ZOOM_OFF;
+        zoom_step(auto_zoom == AUTO_ZOOM_IN);
+        if (ZOOM_TOTAL == 0) {
+            auto_zoom = AUTO_ZOOM_IN;
+        } else if (ZOOM_TOTAL == (MAX_ZOOM-1)) {
+            auto_zoom = AUTO_ZOOM_OUT;
         }
     }
 
     // inform mandelbrot set cache of the current ctr and zoom
-    cache_param_change(ctr, zoom, pane->w, pane->h, debug_force_cache_thread_run);
-    debug_force_cache_thread_run = false;
+    // xxx comments
+    static bool first_call = true;
+    if (first_call) {
+        show_file(0); // xxx what if there is no file 0,  don't allow it to be deleted
+        first_call = false;
+    } else if (slide_show_enabled && microsec_timer() > slide_show_time_us + SLIDE_SHOW_INTVL_US) {
+        // xxx garbage collect ?
+        slide_show_idx = (slide_show_idx + 1) % max_file_info;
+        show_file(slide_show_idx);
+        slide_show_time_us = microsec_timer();
+    } else {
+        cache_param_change(ctr, zoom, pane->w, pane->h, debug_force_cache_thread_run);
+        debug_force_cache_thread_run = false;  // xxx needed?
+    }
 
     // get the cached mandelbrot set values; and
     // convert them to pixel color values
@@ -434,9 +486,92 @@ static void render_hndlr_mbs(pane_cx_t *pane_cx)
 #endif
 
     // register for events
-    sdl_register_event(pane, pane, SDL_EVENT_CENTER, SDL_EVENT_TYPE_MOUSE_RIGHT_CLICK, pane_cx);
-    sdl_register_event(pane, pane, SDL_EVENT_PAN, SDL_EVENT_TYPE_MOUSE_MOTION, pane_cx);
-    sdl_register_event(pane, pane, SDL_EVENT_ZOOM, SDL_EVENT_TYPE_MOUSE_WHEEL, pane_cx);
+    // xxx cleanup this section, and note which are for linux only
+
+    sdl_register_event(pane, pane, SDL_EVENT_MBS_PAN, SDL_EVENT_TYPE_MOUSE_MOTION, pane_cx);
+    sdl_register_event(pane, pane, SDL_EVENT_MBS_MOUSE_WHEEL_ZOOM, SDL_EVENT_TYPE_MOUSE_WHEEL, pane_cx);
+
+    int fcw = sdl_font_char_width(FONTSZ);
+    int fch = sdl_font_char_height(FONTSZ);
+    rect_t loc;
+
+    loc = (rect_t){pane->w/2-5*fcw/2, 0, 5*fcw, fch};
+    if (ctrls_enabled) {
+        sdl_render_text_and_register_event(
+                pane, loc.x, loc.y, FONTSZ, "CTRLS", SDL_LIGHT_BLUE, SDL_BLACK,
+                SDL_EVENT_MBS_CTRLS, SDL_EVENT_TYPE_MOUSE_CLICK, pane_cx);
+    } else {
+        // xxx larger box
+        sdl_register_event(pane, &loc, SDL_EVENT_MBS_CTRLS, SDL_EVENT_TYPE_MOUSE_CLICK, pane_cx);
+    }
+
+    if (ctrls_enabled) {
+        // XXX bring in font as in preoj_entopy
+        // xxx later, only display if SHOWN
+
+        static int first=1;
+        if (first) {
+            first = 0;
+            INFO("fcw/h = %d %d\n", fcw, fch);
+        }
+
+        loc = (rect_t){pane->w-4*fcw, 0, 4*fcw, fch};
+        sdl_render_text_and_register_event(
+                pane, loc.x, loc.y, FONTSZ, "HELP", SDL_LIGHT_BLUE, SDL_BLACK,
+                SDL_EVENT_MBS_HELP, SDL_EVENT_TYPE_MOUSE_CLICK, pane_cx);
+        //loc = (rect_t){pane->w-4*fcw, fch+1, 4*fcw, fch};  // xxx test
+        //sdl_render_fill_rect(pane, &loc, SDL_BLACK);
+
+        loc = (rect_t){0, 0, 4*fcw, fch};
+        sdl_render_text_and_register_event(
+                pane, loc.x, loc.y, FONTSZ, "INFO", SDL_LIGHT_BLUE, SDL_BLACK,
+                SDL_EVENT_MBS_INFO, SDL_EVENT_TYPE_MOUSE_CLICK, pane_cx);
+
+        loc = (rect_t){0, pane->h/2-fch/2, 3*fcw, fch};
+        sdl_render_text_and_register_event(
+                pane, loc.x, loc.y, FONTSZ, " < ", SDL_LIGHT_BLUE, SDL_BLACK,
+                SDL_EVENT_MBS_SHOW_PRIOR_FILE, SDL_EVENT_TYPE_MOUSE_CLICK, pane_cx);
+
+        loc = (rect_t){pane->w-3*fcw, pane->h/2-fch/2, 3*fcw, fch};
+        sdl_render_text_and_register_event(
+                pane, loc.x, loc.y, FONTSZ, " > ", SDL_LIGHT_BLUE, SDL_BLACK,
+                SDL_EVENT_MBS_SHOW_NEXT_FILE, SDL_EVENT_TYPE_MOUSE_CLICK, pane_cx);
+
+        loc = (rect_t){pane->w-5*fcw, pane->h-fch, 5*fcw, fch};
+        sdl_render_text_and_register_event(
+                pane, loc.x, loc.y, FONTSZ, "FILES", SDL_LIGHT_BLUE, SDL_BLACK,
+                SDL_EVENT_MBS_FILES, SDL_EVENT_TYPE_MOUSE_CLICK, pane_cx);
+
+        loc = (rect_t){pane->w/2-7*fcw/2, pane->h-fch, 7*fcw, fch};
+        sdl_render_text_and_register_event(
+                pane, loc.x, loc.y, FONTSZ, "ZM_AUTO", SDL_LIGHT_BLUE, SDL_BLACK,
+                SDL_EVENT_MBS_ZOOM_AUTO, SDL_EVENT_TYPE_MOUSE_CLICK, pane_cx);
+
+        loc = (rect_t){pane->w*.25-6*fcw/2, pane->h-fch, 6*fcw, fch};
+        sdl_render_text_and_register_event(
+                pane, loc.x, loc.y, FONTSZ, "ZM_OUT", SDL_LIGHT_BLUE, SDL_BLACK,
+                SDL_EVENT_MBS_ZOOM_OUT, SDL_EVENT_TYPE_MOUSE_CLICK, pane_cx);
+
+        // xxx simplify this code loc.x, loc.y
+        loc = (rect_t){pane->w*.75-5*fcw/2, pane->h-fch, 5*fcw, fch};
+        sdl_render_text_and_register_event(
+                pane, loc.x, loc.y, FONTSZ, "ZM_IN", SDL_LIGHT_BLUE, SDL_BLACK,
+                SDL_EVENT_MBS_ZOOM_IN, SDL_EVENT_TYPE_MOUSE_CLICK, pane_cx);
+
+        loc = (rect_t){pane->w*.75-4*fcw/2, 0, 4*fcw, fch};
+        sdl_render_text_and_register_event(
+                pane, loc.x, loc.y, FONTSZ, "SHOW", SDL_LIGHT_BLUE, SDL_BLACK,
+                SDL_EVENT_MBS_SLIDE_SHOW, SDL_EVENT_TYPE_MOUSE_CLICK, pane_cx);
+
+        if (cache_thread_first_phase1_zoom_lvl_is_finished()) {
+            int x,y;
+            x = 0; y = pane->h-fch;
+            sdl_render_text_and_register_event(
+                    pane, x, y, FONTSZ, "SAVE", SDL_LIGHT_BLUE, SDL_BLACK,
+                    SDL_EVENT_MBS_SAVE, SDL_EVENT_TYPE_MOUSE_CLICK, pane_cx);
+        }
+    }
+
 }
 
 static int event_hndlr_mbs(pane_cx_t *pane_cx, sdl_event_t *event)
@@ -444,8 +579,119 @@ static int event_hndlr_mbs(pane_cx_t *pane_cx, sdl_event_t *event)
     rect_t * pane = &pane_cx->pane;
     int      rc   = PANE_HANDLER_RET_NO_ACTION;
 
+    // xxx organize
     switch (event->event_id) {
+    // --- XXXXXXXXXXXXXXXXXXX ---
+    case SDL_EVENT_MBS_CTRLS:
+        ctrls_enabled = !ctrls_enabled;
+        break;
 
+    // --- XXX ---
+    case SDL_EVENT_MBS_HELP:
+        // XXX bump the count wheneever changng  - XXX but why?
+        display_select = DISPLAY_SELECT_HELP;
+        display_select_count++;
+        break;
+
+    // --- XXX ---
+    case SDL_EVENT_MBS_INFO:
+        display_info = !display_info;
+        break;
+
+    // --- SELECT A SAVED FILE ---
+    case SDL_EVENT_MBS_SHOW_NEXT_FILE:
+    case SDL_EVENT_MBS_SHOW_PRIOR_FILE: { // xxx also slide show mode ?
+        static int idx = -1;
+        static int last_display_select_count;
+
+        if (display_select_count != last_display_select_count) {
+            cache_file_garbage_collect(); // xxx review this, and display_select_count
+            last_display_select_count = display_select_count;
+        }
+
+        // xxx simplify
+        if (display_file_idx != -1) {
+            idx = display_file_idx;
+            display_file_idx = -1;
+        }
+        idx = idx + (event->event_id == SDL_EVENT_MBS_SHOW_NEXT_FILE ? 1 : -1);
+
+        if (idx < 0) {
+            idx = max_file_info-1;
+        } else if (idx >= max_file_info) {
+            idx = 0;
+        }
+
+        show_file(idx);
+        break; }
+
+    case SDL_EVENT_MBS_FILES:
+        display_select = DISPLAY_SELECT_DIRECTORY;
+        display_select_count++;
+        break;
+
+    // --- ADUST ZOOM  ---
+    case SDL_EVENT_MBS_ZOOM_AUTO:  // xxx name
+        // start and stop auto_zoom
+        if (auto_zoom != AUTO_ZOOM_OFF) {
+            auto_zoom_last = auto_zoom;
+            auto_zoom = AUTO_ZOOM_OFF;
+        } else {
+            if (ZOOM_TOTAL == 0) {
+                auto_zoom = AUTO_ZOOM_IN;
+            } else if (ZOOM_TOTAL == (MAX_ZOOM-1)) {
+                auto_zoom = AUTO_ZOOM_OUT;
+            } else {
+                auto_zoom = auto_zoom_last;
+            }
+        }
+        break;
+    case SDL_EVENT_MBS_ZOOM_IN:
+        if (auto_zoom != AUTO_ZOOM_OFF) {
+            auto_zoom = AUTO_ZOOM_IN;
+            break;
+        }
+        zoom_step(true);
+        break;
+    case SDL_EVENT_MBS_ZOOM_OUT:
+        if (auto_zoom != AUTO_ZOOM_OFF) {
+            auto_zoom = AUTO_ZOOM_OUT;
+            break;
+        }
+        zoom_step(false);
+        break;
+    case SDL_EVENT_MBS_MOUSE_WHEEL_ZOOM:
+        if (event->mouse_wheel.delta_y > 0) {
+            zoom_step(true);
+        } else if (event->mouse_wheel.delta_y < 0) {
+            zoom_step(false);
+        }
+        break;
+
+
+    // --- ADUST CENTER ---
+    case SDL_EVENT_MBS_PAN: {
+        double pixel_size = pixel_size_at_zoom0 * pow(2,-ZOOM_TOTAL);
+        ctr += -(event->mouse_motion.delta_x * pixel_size) +
+               -(event->mouse_motion.delta_y * pixel_size) * I;
+        break; }
+
+    case SDL_EVENT_MBS_SLIDE_SHOW:
+        slide_show_enabled = !slide_show_enabled;
+        slide_show_time_us = 0;
+        slide_show_idx = -1;
+        set_alert(SDL_WHITE, "SLIDE SHOW IS %s", slide_show_enabled ? "STARTING" : "STOPPED");
+        break;
+
+    // --- XXX  ---
+    case SDL_EVENT_MBS_SAVE: {
+        int idx;
+        idx = save_file(pane);
+        INFO("XXX SAVE newfile idx=%d\n",idx);
+        cache_file_update(idx, 1);
+        break; }
+
+#if 0
     // --- GENERAL ---
     case 'r':  // reset ctr and zoom
         ctr           = INITIAL_CTR;
@@ -456,9 +702,6 @@ static int event_hndlr_mbs(pane_cx_t *pane_cx, sdl_event_t *event)
         wavelen_start = WAVELEN_START_DEFAULT;
         wavelen_scale = WAVELEN_SCALE_DEFAULT;
         init_color_lut(wavelen_start, wavelen_scale, color_lut);
-        break;
-    case 'i':  // toggle display of info section at top left 
-        display_info = !display_info;
         break;
     case 's':  // save 
         save_file(pane);
@@ -502,8 +745,6 @@ static int event_hndlr_mbs(pane_cx_t *pane_cx, sdl_event_t *event)
 
     // --- ZOOM ---
     case '+': case '=': case '-':   // zoom in/out
-        zoom_step(event->event_id == '+' || event->event_id == '=');
-        break;
     case SDL_EVENT_ZOOM:  // zoom in/out using mouse wheel
         if (event->mouse_wheel.delta_y > 0) {
             zoom_step(true);
@@ -522,77 +763,18 @@ static int event_hndlr_mbs(pane_cx_t *pane_cx, sdl_event_t *event)
         break;
 
     // --- AUTO ZOOM ---
-    case 'a':
-        // start and stop auto_zoom
-        if (auto_zoom != AUTO_ZOOM_OFF) {
-            auto_zoom_last = auto_zoom;
-            auto_zoom = AUTO_ZOOM_OFF;
-        } else {
-            if (ZOOM_TOTAL == 0) {
-                auto_zoom = AUTO_ZOOM_FORWARD;
-            } else if (ZOOM_TOTAL == (MAX_ZOOM-1)) {
-                auto_zoom = AUTO_ZOOM_REVERSE;
-            } else {
-                auto_zoom = auto_zoom_last;
-            }
-        }
-        break;
     case 'A': 
         // flip direction of autozoom
-        if (auto_zoom == AUTO_ZOOM_FORWARD) {
-            auto_zoom = AUTO_ZOOM_REVERSE;
-        } else if (auto_zoom == AUTO_ZOOM_REVERSE) {
-            auto_zoom = AUTO_ZOOM_FORWARD;
+        if (auto_zoom == AUTO_ZOOM_IN) {
+            auto_zoom = AUTO_ZOOM_OUT;
+        } else if (auto_zoom == AUTO_ZOOM_OUT) {
+            auto_zoom = AUTO_ZOOM_IN;
         } else {
-            auto_zoom_last = (auto_zoom_last == AUTO_ZOOM_FORWARD ? AUTO_ZOOM_REVERSE : AUTO_ZOOM_FORWARD);
+            auto_zoom_last = (auto_zoom_last == AUTO_ZOOM_IN ? AUTO_ZOOM_OUT : AUTO_ZOOM_IN);
         }
         break;
 
-    // --- SELECT A SAVED FILE ---
-    case SDL_EVENT_KEY_PGUP: 
-    case SDL_EVENT_KEY_PGDN:
-    case SDL_EVENT_KEY_HOME:
-    case SDL_EVENT_KEY_END: {
-        static int idx = -1;
-        static int last_display_select_count;
-
-        if (display_select_count != last_display_select_count) {
-            cache_file_garbage_collect();
-            last_display_select_count = display_select_count;
-        }
-
-        if (event->event_id == SDL_EVENT_KEY_HOME) {
-            idx = 0;
-        } else if (event->event_id == SDL_EVENT_KEY_END) {
-            idx = max_file_info-1;
-        } else {
-            if (display_file_idx != -1) {
-                idx = display_file_idx;
-                display_file_idx = -1;
-            }
-            idx = idx + (event->event_id == SDL_EVENT_KEY_PGUP ? -1 : 1);
-        }
-
-        if (idx < 0) {
-            idx = max_file_info-1;
-        } else if (idx >= max_file_info) {
-            idx = 0;
-        }
-
-        cache_file_read(idx);
-
-        ctr           = file_info[idx]->ctr;
-        zoom          = file_info[idx]->zoom;
-        zoom_fraction = file_info[idx]->zoom_fraction;
-        wavelen_start = file_info[idx]->wavelen_start;
-        wavelen_scale = file_info[idx]->wavelen_scale;
-
-        init_color_lut(wavelen_start, wavelen_scale, color_lut);
-
-        strcpy(display_file_name, file_info[idx]->file_name);
-        display_file_type = file_info[idx]->file_type;
-        display_file_ctr = file_info[idx]->ctr;
-        break; }
+#endif
     }
 
     return rc;
@@ -647,7 +829,7 @@ static void init_color_lut(int wavelen_start, int wavelen_scale, unsigned int *c
     }
 }
 
-static void display_info_proc(rect_t *pane, unsigned long update_intvl_ms)
+static void display_info_proc(rect_t *pane, uint64_t update_intvl_ms)
 {
     char line[20][50];
     int  line_len[20];
@@ -686,20 +868,20 @@ static void display_info_proc(rect_t *pane, unsigned long update_intvl_ms)
     }
 
     // extend each line with spaces, out to max_len,
-    // so that each line is max_len long
+    // so that each line is max_len in length
     for (i = 0; i < n; i++) {
         sprintf(line[i]+line_len[i], "%*s", max_len-line_len[i], "");
     }
 
     // render the lines
-    for (i = 0; i < n; i++) {
-        sdl_render_printf(pane, 0, ROW2Y(i,20), 20,  SDL_WHITE, SDL_BLACK, "%s", line[i]);
+    for (i = 0; i < n; i++) {//xxx vvv
+        sdl_render_printf(pane, 0, 1.5*FONTSZ+ROW2Y(i,FONTSZ_INFO), FONTSZ_INFO,  SDL_WHITE, SDL_BLACK, "%s", line[i]);
     }
 }
 
-static void save_file(rect_t *pane)
+static int save_file(rect_t *pane)
 {
-    int             x_idx, y_idx, idx, w, h;
+    int             x_idx, y_idx, pxidx, w, h, idx;
     unsigned int   *pixels;
     unsigned short *mbsval;
     double          x, y, x_step, y_step;
@@ -711,7 +893,7 @@ static void save_file(rect_t *pane)
     y      = 0;
     y_step = (double)h / DIR_PIXELS_HEIGHT;
     x_step = (double)w / DIR_PIXELS_WIDTH;
-    idx    = 0;
+    pxidx  = 0;
 
     // alloc memory for mbs values and pixels
     mbsval = malloc(w * h * 2);
@@ -725,22 +907,42 @@ static void save_file(rect_t *pane)
     for (y_idx = 0; y_idx < DIR_PIXELS_HEIGHT; y_idx++) {
         x = 0;
         for (x_idx = 0; x_idx < DIR_PIXELS_WIDTH; x_idx++) {
-            pixels[idx] = color_lut[
+            pixels[pxidx] = color_lut[
                              mbsval[(int)nearbyint(y) * w  +  (int)nearbyint(x)]
                                         ];
-            idx++;
+            pxidx++;
             x = x + x_step;
         }
         y = y + y_step;
     }
 
     // create the file, and set an alert to indicate the file has been created
-    cache_file_create(ctr, zoom, zoom_fraction, wavelen_start, wavelen_scale, pixels);
+    idx = cache_file_create(ctr, zoom, zoom_fraction, wavelen_start, wavelen_scale, pixels);
     set_alert(SDL_GREEN, "SAVE COMPLETE");
 
     // free memory
     free(mbsval);
     free(pixels);
+
+    // return the file_info array idx
+    return idx;
+}
+
+static void show_file(int idx)
+{
+    cache_file_read(idx);
+
+    ctr           = file_info[idx]->ctr;
+    zoom          = file_info[idx]->zoom;
+    zoom_fraction = file_info[idx]->zoom_fraction;
+    wavelen_start = file_info[idx]->wavelen_start;
+    wavelen_scale = file_info[idx]->wavelen_scale;
+
+    init_color_lut(wavelen_start, wavelen_scale, color_lut);
+
+    strcpy(display_file_name, file_info[idx]->file_name);
+    display_file_type = file_info[idx]->file_type;
+    display_file_ctr = file_info[idx]->ctr;
 }
 
 // - - - - - - - - -  PANE_HNDLR : HELP  - - - - - - - - - - - - - - - -
@@ -757,7 +959,9 @@ static void render_hndlr_help(pane_cx_t *pane_cx)
     static asset_file_t *f;
     static int last_display_select_count;
 
-    #define SDL_EVENT_SCROLL_WHEEL (SDL_EVENT_USER_DEFINED + 0)
+    #define SDL_EVENT_HELP_MOUSE_MOTION  (SDL_EVENT_USER_DEFINED + 0)
+    #define SDL_EVENT_HELP_MOUSE_WHEEL   (SDL_EVENT_USER_DEFINED + 1)
+    #define SDL_EVENT_HELP_BACK    (SDL_EVENT_USER_DEFINED + 2)
 
     // read help.txt, on first call
     if (f == NULL) {
@@ -780,18 +984,28 @@ static void render_hndlr_help(pane_cx_t *pane_cx)
         if (s == NULL) {
             break;
         }
-        y = y_top_help + ROW2Y(row,20);
-        if (y <= -ROW2Y(1,20) || y >= pane->h) {
+        y = y_top_help + ROW2Y(row,FONTSZ_HELP);
+        if (y <= -ROW2Y(1,FONTSZ_HELP) || y >= pane->h) {
             continue;
         }
-        sdl_render_printf(pane, 0, y, 20, SDL_WHITE, SDL_BLACK, "%s", s);
+        sdl_render_printf(pane, 0, y, FONTSZ_HELP, SDL_WHITE, SDL_BLACK, "%s", s);
     }
 
     // save max_help_row for use below to limit the scrolling range
     max_help_row = row;
 
-    // register for mouse wheel scrool event
-    sdl_register_event(pane, pane, SDL_EVENT_SCROLL_WHEEL, SDL_EVENT_TYPE_MOUSE_WHEEL, pane_cx);
+    // register for scrool event
+    // xxx also wheel and arrow keys for linux
+    sdl_register_event(pane, pane, SDL_EVENT_HELP_MOUSE_MOTION, SDL_EVENT_TYPE_MOUSE_MOTION, pane_cx);
+    // xxx linux only ?
+    sdl_register_event(pane, pane, SDL_EVENT_HELP_MOUSE_WHEEL, SDL_EVENT_TYPE_MOUSE_WHEEL, pane_cx);
+
+    int fcw = sdl_font_char_width(FONTSZ);  // xxx one define
+    int fch = sdl_font_char_height(FONTSZ);
+    rect_t loc = (rect_t){pane->w-4*fcw, pane->h-fch, 4*fcw, fch};
+    sdl_render_text_and_register_event(
+            pane, loc.x, loc.y, FONTSZ, "BACK", SDL_LIGHT_BLUE, SDL_BLACK,
+            SDL_EVENT_HELP_BACK, SDL_EVENT_TYPE_MOUSE_CLICK, pane_cx);
 }
 
 static int event_hndlr_help(pane_cx_t *pane_cx, sdl_event_t *event)
@@ -800,44 +1014,32 @@ static int event_hndlr_help(pane_cx_t *pane_cx, sdl_event_t *event)
 
     // handle events to adjust the help text scroll position (y_top_help)
     switch (event->event_id) {
-    case SDL_EVENT_SCROLL_WHEEL:
-    case SDL_EVENT_KEY_PGUP:
-    case SDL_EVENT_KEY_PGDN:
-    case SDL_EVENT_KEY_UP_ARROW:
-    case SDL_EVENT_KEY_DOWN_ARROW:
-    case SDL_EVENT_KEY_HOME:
-    case SDL_EVENT_KEY_END:
-        if (event->event_id == SDL_EVENT_SCROLL_WHEEL) {
-            if (event->mouse_wheel.delta_y > 0) {
-                y_top_help += 20;
-            } else if (event->mouse_wheel.delta_y < 0) {
-                y_top_help -= 20;
-            }
-        } else if (event->event_id == SDL_EVENT_KEY_PGUP) {
-            y_top_help += 600;
-        } else if (event->event_id == SDL_EVENT_KEY_PGDN) {
-            y_top_help -= 600;
-        } else if (event->event_id == SDL_EVENT_KEY_UP_ARROW) {
-            y_top_help += 20;
-        } else if (event->event_id == SDL_EVENT_KEY_DOWN_ARROW) {
-            y_top_help -= 20;
-        } else if (event->event_id == SDL_EVENT_KEY_HOME) {
-            y_top_help = 0;
-        } else if (event->event_id == SDL_EVENT_KEY_END) {
-            y_top_help = -999999999;
-        } else {
-            FATAL("unexpected event_id 0x%x\n", event->event_id);
-        }
-
-        int y_top_help_limit = (-max_help_row+10) * ROW2Y(1,20);
+    case SDL_EVENT_HELP_MOUSE_MOTION: {
+        int y_top_help_limit = (-max_help_row+10) * ROW2Y(1,FONTSZ_HELP);
+        y_top_help += event->mouse_motion.delta_y;
         if (y_top_help < y_top_help_limit) y_top_help = y_top_help_limit;
         if (y_top_help > 0) y_top_help = 0;
+        break; }
+    case SDL_EVENT_HELP_MOUSE_WHEEL: {
+        int y_top_help_limit = (-max_help_row+10) * ROW2Y(1,FONTSZ_HELP);
+        if (event->mouse_wheel.delta_y > 0) {
+            y_top_help += FONTSZ_HELP;
+        } else if (event->mouse_wheel.delta_y < 0) {
+            y_top_help -= FONTSZ_HELP;
+        }
+        if (y_top_help < y_top_help_limit) y_top_help = y_top_help_limit;
+        if (y_top_help > 0) y_top_help = 0;
+        break; }
+    case SDL_EVENT_HELP_BACK:
+        display_select = DISPLAY_SELECT_MBS;
+        display_select_count++;
         break;
     }
 
     return rc;
 }
 
+#if 0
 // - - - - - - - - -  PANE_HNDLR : COLOR_LUT   - - - - - - - - - - - - -
 
 static void render_hndlr_color_lut(pane_cx_t *pane_cx)
@@ -892,6 +1094,7 @@ static int event_hndlr_color_lut(pane_cx_t *pane_cx, sdl_event_t *event)
 
     return rc;
 }
+#endif
 
 // - - - - - - - - -  PANE_HNDLR : DIRECTORY  - - - - - - - - - - - - -
 

@@ -21,8 +21,12 @@
 #include <fcntl.h>
 #include <dirent.h>
 
-#define DEBUG_PRINT_ENABLED (debug_enabled)
+#define DEBUG_PRINT_ENABLED (debug_enabled)  // xxx don't like this
 #include <util_misc.h>
+
+// xxx also in util
+// long is not portable between Linux and Android
+#define long DO_NOT_USE_LONG
 
 //
 // defines
@@ -46,7 +50,7 @@
 typedef double complex complex_t;
 
 typedef struct {
-    unsigned long magic;
+    uint64_t      magic;
     char          file_name[300];
     int           file_type;
     complex_t     ctr;

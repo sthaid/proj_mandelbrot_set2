@@ -38,6 +38,13 @@
 #define MAX_EVENT_REG_TBL     1000
 #define MAX_SDL_COLOR_TO_RGBA 1000
 
+// xxx maybe it should run from assets dir
+#ifndef ANDROID
+#define FONT_PATH "assets/fonts/FreeMonoBold.ttf"
+#else
+#define FONT_PATH "fonts/FreeMonoBold.ttf"
+#endif
+
 #define min(a,b) \
    ({ __typeof__ (a) _a = (a); \
        __typeof__ (b) _b = (b); \
@@ -77,7 +84,6 @@ static Mix_Chunk      * sdl_button_sound;
 #endif
 
 static sdl_font_t       sdl_font[MAX_FONT_PTSIZE];
-static char           * sdl_font_path;
 
 static sdl_event_reg_t  sdl_event_reg_tbl[MAX_EVENT_REG_TBL];
 static int32_t          sdl_event_max;
@@ -139,10 +145,6 @@ static inline uint32_t _bswap32(uint32_t a)
 
 int32_t sdl_init(int32_t *w, int32_t *h, bool fullscreen, bool resizeable, bool swap_white_black)
 {
-    #define MAX_FONT_SEARCH_PATH 2
-
-    static char font_search_path[MAX_FONT_SEARCH_PATH][PATH_MAX];
-
     // display available and current video drivers
     int num, i;
     num = SDL_GetNumVideoDrivers();
@@ -208,30 +210,6 @@ int32_t sdl_init(int32_t *w, int32_t *h, bool fullscreen, bool resizeable, bool 
         ERROR("TTF_Init failed\n");
         return -1;
     }
-
-    // determine sdl_font_path by searching for FreeMonoBold.ttf font file in possible locations
-    // note - fonts can be installed using:
-    //   sudo yum install gnu-free-mono-fonts       # rhel,centos,fedora
-    //   sudo apt-get install fonts-freefont-ttf    # raspberrypi, ubuntu
-#ifndef ANDROID
-    sprintf(font_search_path[0], "%s", "/usr/share/fonts/gnu-free/FreeMonoBold.ttf");
-    sprintf(font_search_path[1], "%s", "/usr/share/fonts/truetype/freefont/FreeMonoBold.ttf");
-#else
-    sprintf(font_search_path[0], "%s", "/system/fonts/DroidSansMono.ttf");
-    sprintf(font_search_path[1], "%s", "no_font_path_2");
-#endif
-    for (i = 0; i < MAX_FONT_SEARCH_PATH; i++) {
-        struct stat buf;
-        sdl_font_path = font_search_path[i];
-        if (stat(sdl_font_path, &buf) == 0) {
-            break;
-        }
-    }
-    if (i == MAX_FONT_SEARCH_PATH) {
-        ERROR("failed to locate font file\n");
-        return -1;
-    }
-    DEBUG("using font %s\n", sdl_font_path);
 
     // currently the SDL Text Input feature is not being used here
     SDL_StopTextInput();
@@ -332,10 +310,9 @@ static void font_init(int32_t font_ptsize)
     }
 
     // open font for this font_ptsize,
-    assert(sdl_font_path);
-    sdl_font[font_ptsize].font = TTF_OpenFont(sdl_font_path, font_ptsize);
+    sdl_font[font_ptsize].font = TTF_OpenFont(FONT_PATH, font_ptsize);
     if (sdl_font[font_ptsize].font == NULL) {
-        FATAL("failed TTF_OpenFont(%s,%d)\n", sdl_font_path, font_ptsize);
+        FATAL("failed TTF_OpenFont(%s,%d)\n", FONT_PATH, font_ptsize);
     }
 
     // and init the char_width / char_height
