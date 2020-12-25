@@ -20,6 +20,7 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <dirent.h>
+#include <zlib.h>
 
 #define DEBUG_PRINT_ENABLED (debug_enabled)  // xxx don't like this
 #include <util_misc.h>

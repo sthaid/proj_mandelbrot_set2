@@ -563,7 +563,7 @@ static void render_hndlr_mbs(pane_cx_t *pane_cx)
                 pane, loc.x, loc.y, FONTSZ, "SHOW", SDL_LIGHT_BLUE, SDL_BLACK,
                 SDL_EVENT_MBS_SLIDE_SHOW, SDL_EVENT_TYPE_MOUSE_CLICK, pane_cx);
 
-        if (cache_thread_first_phase1_zoom_lvl_is_finished()) {
+        if (true || cache_thread_first_phase1_zoom_lvl_is_finished()) {  // XXX
             int x,y;
             x = 0; y = pane->h-fch;
             sdl_render_text_and_register_event(

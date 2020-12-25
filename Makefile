@@ -27,7 +27,7 @@ all: $(TARGETS)
 mbs2: $(SRC_MBS2:.c=.o)
 	echo "char *version = \"`git log -1 --format=%h`\";" > version.c
 	$(CC) -o $@ $(SRC_MBS2:.c=.o) version.c \
-              -lpthread -lm -ljpeg -lpng -lSDL2 -lSDL2_ttf
+              -lpthread -lm -lz -ljpeg -lpng -lSDL2 -lSDL2_ttf
 
 -include $(DEP)
 

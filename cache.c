@@ -11,6 +11,7 @@
 #define MBSVAL_BYTES                (CACHE_HEIGHT*CACHE_WIDTH*2)
 
 #define MAGIC_MBS_FILE              0x5555555500000002
+#define MAGIC_FFCE                  0x11223344
 
 #define CTR_INVALID                 (999 + 0 * I)
 
@@ -72,12 +73,14 @@ typedef struct {
     bool             phase1_spiral_done;
     spiral_t         phase2_spiral;
     bool             phase2_spiral_done;
-    unsigned short (*mbsval)[CACHE_HEIGHT][CACHE_WIDTH];
+    unsigned short (*mbsval)[CACHE_HEIGHT][CACHE_WIDTH];  // xxx porting problem
 } cache_t;
 
 typedef struct {
+    int magic;
     cache_t cache;
-    unsigned short mbsval[CACHE_HEIGHT][CACHE_WIDTH];
+    int compressed_mbsval_datalen;
+    char compressed_mbsval_data[0];
 } file_format_cache_t;
 
 typedef struct {
@@ -404,6 +407,7 @@ int cache_file_create(complex_t ctr, int zoom, double zoom_fraction, int wavelen
     file_format_t      file;
     cache_file_info_t *fi = &file.fi;
 
+    // xxx review comments throughout
     // This routine is called, by mbs.c 's' keystroke, to create a new save place file
     // in the MBS_CACHE dir, the created file does not contain any cached mbs values, but
     // just contains the values needed to recreate the mbs image (such as ctr, zoom and 
@@ -501,17 +505,53 @@ void cache_file_read(int idx)
     for (i = 0; i < n; i++) {
         static file_format_cache_t ffce;
         int z;
+        Bytef *compressed_mbsval_data;
+        uLongf destlen;
+        int rc;
 
-        READ(fi->file_name, fd, &ffce, sizeof(file_format_cache_t));
+        // read the file_format_cache_t up to the begining of the compressed_mbsval_data
+        // field that is at the end of this structure
+        READ(fi->file_name, fd, &ffce, offsetof(file_format_cache_t, compressed_mbsval_data));
 
+        // verify fields of the file_format_cache_t (ffce)
+        if (ffce.magic != MAGIC_FFCE) {
+            FATAL("ffce.magic=0x%x, expected=0x%x\n", ffce.magic, MAGIC_FFCE);
+        }
         z = ffce.cache.zoom;
         if (z < 0 || z >= MAX_ZOOM) {
             FATAL("ffce.cache.zoom=%d out of range\n", z);
         }
 
+        // xxxx  will remove later
         ffce.cache.mbsval = cache[z].mbsval;
         cache[z] = ffce.cache;
-        memcpy(cache[z].mbsval, ffce.mbsval, MBSVAL_BYTES);
+
+        // read mbsval_data, and decompress to cache[z].mbsval
+        //
+        // - allocate buffer to read the compressed_mbsval_data into
+        compressed_mbsval_data = malloc(ffce.compressed_mbsval_datalen);
+        if (compressed_mbsval_data == NULL) {
+            FATAL("malloc %d failed\n", ffce.compressed_mbsval_datalen);
+        }
+        INFO("comp datalen = %d\n", ffce.compressed_mbsval_datalen);
+
+        // - read the compressed_mbsval_data
+        READ(fi->file_name, fd, compressed_mbsval_data, ffce.compressed_mbsval_datalen);
+
+        // - decompress compressed_mbsval_data to cache[z].mbsval
+        destlen = MBSVAL_BYTES;
+        rc = uncompress((void*)cache[z].mbsval, &destlen, compressed_mbsval_data, ffce.compressed_mbsval_datalen);
+
+        // - free the compressed_mbsval_data
+        free(compressed_mbsval_data);
+
+        // - check that the uncompress was successful
+        if (rc != Z_OK) {
+            FATAL("uncompress rc=%d\n", rc);
+        }
+        if (destlen != MBSVAL_BYTES) {
+            FATAL("uncompressed destlen=%d, expected=%d\n", (int)destlen, MBSVAL_BYTES);
+        }
     }
 
     // close file
@@ -525,7 +565,12 @@ void cache_file_read(int idx)
 void cache_file_update(int idx, int file_type)
 {
     cache_file_info_t *fi = IDX_TO_FI(idx);
-    int z, fd;
+    int z, fd, rc;
+    Bytef *compressed_mbsval_data;
+    uLongf destlen;
+    file_format_cache_t ffce;
+
+    #define COMPRESSED_MBSVAL_DATA_BUFF_SIZE (10*1000000)
 
     DEBUG("idx=%d fn=%s file_type=%d->%d\n", idx, fi->file_name, fi->file_type, file_type);
 
@@ -551,16 +596,39 @@ void cache_file_update(int idx, int file_type)
     fi->file_type = file_type;
     WRITE(fi->file_name, fd, fi, sizeof(cache_file_info_t));
 
+    // allocate buffer for the compressed_mbsval_data
+    compressed_mbsval_data = malloc(COMPRESSED_MBSVAL_DATA_BUFF_SIZE);
+    if (compressed_mbsval_data == NULL) {
+        FATAL("malloc %d failed\n", ffce.compressed_mbsval_datalen);
+    }
+
     // write the desired zoom levels
     for (z = 0; z < MAX_ZOOM; z++) {
         if ((file_type == 1 && z == fi->zoom) || (file_type == 2)) {
             DEBUG("- writing zoom lvl %d\n", z);
-            cache_t cache_tmp = cache[z];
-            cache_tmp.mbsval = NULL;
-            WRITE(fi->file_name, fd, &cache_tmp, sizeof(cache_tmp));
-            WRITE(fi->file_name, fd, cache[z].mbsval, MBSVAL_BYTES);
+
+            // compress cache[z].mbsval to compressed_mbsval_data
+            destlen = COMPRESSED_MBSVAL_DATA_BUFF_SIZE;
+            rc = compress(compressed_mbsval_data, &destlen, (void*)cache[z].mbsval, MBSVAL_BYTES);
+            if (rc != Z_OK) {
+                FATAL("compress rc=%d\n", rc);
+            }
+            INFO("XXX destlen = %d\n", (int)destlen);
+
+            // construct file_format_cache_t (ffce)
+            memset(&ffce,0,sizeof(ffce));
+            ffce.magic = MAGIC_FFCE;
+            ffce.cache = cache[z];    ffce.cache.mbsval = NULL; //xxx temp
+            ffce.compressed_mbsval_datalen = destlen;
+
+            // write the ffce and compressed_mbsval_data
+            WRITE(fi->file_name, fd, &ffce,  offsetof(file_format_cache_t,compressed_mbsval_data));
+            WRITE(fi->file_name, fd, compressed_mbsval_data, destlen);
         }
     }
+
+    // free compressed_mbsval_data
+    free(compressed_mbsval_data);
 
     // close
     CLOSE(fi->file_name, fd);
