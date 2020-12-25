@@ -124,7 +124,7 @@ void list_asset_files(char *location, int32_t *max, char ***pathnames)
     int32_t         ret;
     struct stat     buf;
     char            filename[300];
-    char            tmpfn[300];
+    char            tmpfn[310];
     char            dirpath[300];
 
     sprintf(dirpath, "assets/%s", location);
@@ -425,7 +425,7 @@ char * time2str(char * str, int64_t us, bool gmt, bool display_ms, bool display_
 
 // -----------------  CONFIG READ / WRITE  -------------------------------
 
-static char      config_path[200];
+static char      config_path[210];
 static config_t *config;
 static int       config_version;
 

@@ -802,7 +802,6 @@ static void display_info_proc(rect_t *pane, uint64_t update_intvl_ms)
     char line[20][50];
     int  line_len[20];
     int  n=0, max_len=0, i;
-    int  phase_inprog, zoom_lvl_inprog;
 
     // print info to line[] array xxx reformat
     sprintf(line[n++], "Window: %d %d", pane->w, pane->h);
