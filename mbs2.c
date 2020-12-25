@@ -1042,8 +1042,9 @@ static int event_hndlr_color_lut(pane_cx_t *pane_cx, sdl_event_t *event)
 
 // - - - - - - - - -  PANE_HNDLR : DIRECTORY  - - - - - - - - - - - - -
 
+// xxx lots of cleanup here
 static bool init_request;
-static int  y_top;
+static int  y_top_dir;
 
 #define CLEAR_ALL_FILE_INFO_SELECTED \
     do { \
@@ -1056,17 +1057,19 @@ static int  y_top;
 static void render_hndlr_directory(pane_cx_t *pane_cx)
 {
     rect_t * pane = &pane_cx->pane;
-    int      idx, x, y;
     int      cols = (pane->w/DIR_PIXELS_WIDTH == 0 ? 1 : pane->w/DIR_PIXELS_WIDTH);
+    int      idx, x, y, select_cnt;
+    rect_t   loc;
 
     static texture_t texture;
     static int       last_display_select_count;
 
-    #define SDL_EVENT_DIR_SCROLL_WHEEL (SDL_EVENT_USER_DEFINED + 0)
-    #define SDL_EVENT_DIR_DELETE       (SDL_EVENT_USER_DEFINED + 1)
-    #define SDL_EVENT_DIR_BACK         (SDL_EVENT_USER_DEFINED + 2)
-    #define SDL_EVENT_DIR_CHOICE       (SDL_EVENT_USER_DEFINED + 10)
-    #define SDL_EVENT_DIR_SELECT       (SDL_EVENT_USER_DEFINED + 1100)
+    #define SDL_EVENT_DIR_MOUSE_WHEEL_SCROLL  (SDL_EVENT_USER_DEFINED + 0)
+    #define SDL_EVENT_DIR_MOUSE_MOTION_SCROLL (SDL_EVENT_USER_DEFINED + 1)
+    #define SDL_EVENT_DIR_DELETE              (SDL_EVENT_USER_DEFINED + 2)
+    #define SDL_EVENT_DIR_BACK                (SDL_EVENT_USER_DEFINED + 3)
+    #define SDL_EVENT_DIR_CHOICE              (SDL_EVENT_USER_DEFINED + 10)
+    #define SDL_EVENT_DIR_SELECT              (SDL_EVENT_USER_DEFINED + 1100)
 
     // one time init
     if (texture == NULL) {
@@ -1077,10 +1080,14 @@ static void render_hndlr_directory(pane_cx_t *pane_cx)
     // when the init_request flag has been set (init_request is set when files are deleted)
     if (display_select_count != last_display_select_count || init_request) {
         CLEAR_ALL_FILE_INFO_SELECTED;
-        y_top = 0;
+        y_top_dir = 0;
         init_request = false;
         last_display_select_count = display_select_count;
     }
+
+    // xxx
+    sdl_register_event(pane, pane, SDL_EVENT_DIR_MOUSE_MOTION_SCROLL, SDL_EVENT_TYPE_MOUSE_MOTION, pane_cx);
+    sdl_register_event(pane, pane, SDL_EVENT_DIR_MOUSE_WHEEL_SCROLL, SDL_EVENT_TYPE_MOUSE_WHEEL, pane_cx);
 
     // display the directory images, for each image:
     // - the saved place image is first displayed, followed by
@@ -1093,7 +1100,7 @@ static void render_hndlr_directory(pane_cx_t *pane_cx)
 
         // determine location of upper left
         x = (idx % cols) * DIR_PIXELS_WIDTH;
-        y = (idx / cols) * DIR_PIXELS_HEIGHT + y_top;
+        y = (idx / cols) * DIR_PIXELS_HEIGHT + y_top_dir;
 
         // continue if location is outside of the pane
         if (y <= -DIR_PIXELS_HEIGHT || y >= pane->h) {
@@ -1104,17 +1111,20 @@ static void render_hndlr_directory(pane_cx_t *pane_cx)
         sdl_update_texture(texture, (void*)fi->dir_pixels, DIR_PIXELS_WIDTH*BYTES_PER_PIXEL);
         sdl_render_texture(pane, x, y, texture);
 
-        // display a small red box in it's upper left, if this image is selected
-        if (fi->selected) {
-            rect_t loc = {x,y,17,20};
-            sdl_render_fill_rect(pane, &loc, SDL_RED);
-        }
-
         // register for events for each directory image that is displayed
-        // XXX later need to redo how selected event works
         rect_t loc = {x,y,DIR_PIXELS_WIDTH,DIR_PIXELS_HEIGHT};
         sdl_register_event(pane, &loc, SDL_EVENT_DIR_CHOICE + idx, SDL_EVENT_TYPE_MOUSE_CLICK, pane_cx);
-        sdl_register_event(pane, &loc, SDL_EVENT_DIR_SELECT + idx, SDL_EVENT_TYPE_MOUSE_RIGHT_CLICK, pane_cx);
+        if (!fi->selected) {
+            sdl_render_text_and_register_event(
+                pane, loc.x, loc.y, FONTSZ, "SEL", SDL_LIGHT_BLUE, SDL_BLACK,
+                SDL_EVENT_DIR_SELECT+idx, SDL_EVENT_TYPE_MOUSE_CLICK, pane_cx);
+        } else {
+            int fcw = sdl_font_char_width(FONTSZ);
+            int fch = sdl_font_char_height(FONTSZ);
+            loc = (rect_t){x,y,3*fcw,fch};
+            sdl_render_fill_rect(pane, &loc, SDL_RED);
+            sdl_register_event(pane, &loc, SDL_EVENT_DIR_SELECT+idx, SDL_EVENT_TYPE_MOUSE_CLICK, pane_cx);
+        }
     }
 
     // separate the directory images with black lines
@@ -1127,7 +1137,7 @@ static void render_hndlr_directory(pane_cx_t *pane_cx)
         sdl_render_line(pane, x+1, 0, x+1, pane->h-1, SDL_BLACK);
     }
     for (i = 1; i <= max_file_info-1; i++) {
-        y = (i / cols) * DIR_PIXELS_HEIGHT + y_top;
+        y = (i / cols) * DIR_PIXELS_HEIGHT + y_top_dir;
         if (y+1 < 0 || y-2 > pane->h-1) {
             continue;
         }
@@ -1137,20 +1147,30 @@ static void render_hndlr_directory(pane_cx_t *pane_cx)
         sdl_render_line(pane, 0, y+1, pane->w-1, y+1, SDL_BLACK);
     }
 
-    // register for additional events
-    sdl_register_event(pane, pane, SDL_EVENT_DIR_SCROLL_WHEEL, SDL_EVENT_TYPE_MOUSE_WHEEL, pane_cx);
-
+    // clear bottom of screen where the DELETE and BACK event text is to be displayed
     int fcw = sdl_font_char_width(FONTSZ);  // xxx one define
     int fch = sdl_font_char_height(FONTSZ);
-    rect_t loc = (rect_t){pane->w-4*fcw, pane->h-fch, 4*fcw, fch};
+    loc = (rect_t){0, pane->h-(int)(1.5*fch), pane->w, (int)(1.5*fch)};
+    sdl_render_fill_rect(pane, &loc, SDL_BLACK);
+
+    // register for additional events
+
+    loc = (rect_t){pane->w-4*fcw, pane->h-fch, 4*fcw, fch};
     sdl_render_text_and_register_event(
             pane, loc.x, loc.y, FONTSZ, "BACK", SDL_LIGHT_BLUE, SDL_BLACK,
             SDL_EVENT_DIR_BACK, SDL_EVENT_TYPE_MOUSE_CLICK, pane_cx);
 
-    loc = (rect_t){0, pane->h-fch, 6*fcw, fch};
-    sdl_render_text_and_register_event(
-            pane, loc.x, loc.y, FONTSZ, "DELETE", SDL_LIGHT_BLUE, SDL_BLACK,
-            SDL_EVENT_DIR_DELETE, SDL_EVENT_TYPE_MOUSE_CLICK, pane_cx);
+    for (select_cnt=0, idx=0; idx < max_file_info; idx++) {
+        if (file_info[idx]->selected) select_cnt++;
+    }
+    if (select_cnt) {
+        loc = (rect_t){0, pane->h-fch, 6*fcw, fch};
+        char str[100];
+        sprintf(str, "DELETE %d FILE%s", select_cnt, select_cnt>1?"S":"");
+        sdl_render_text_and_register_event(
+                pane, loc.x, loc.y, FONTSZ, str, SDL_LIGHT_BLUE, SDL_BLACK,
+                SDL_EVENT_DIR_DELETE, SDL_EVENT_TYPE_MOUSE_CLICK, pane_cx);
+    }
 }
 
 static int event_hndlr_directory(pane_cx_t *pane_cx, sdl_event_t *event)
@@ -1161,16 +1181,21 @@ static int event_hndlr_directory(pane_cx_t *pane_cx, sdl_event_t *event)
     int      idx, cnt;
 
     switch (event->event_id) {
-    case SDL_EVENT_DIR_SCROLL_WHEEL:
-        if (event->mouse_wheel.delta_y > 0) {
-            y_top += 20;  // XXX why 20
-        } else if (event->mouse_wheel.delta_y < 0) {
-            y_top -= 20;
+    case SDL_EVENT_DIR_MOUSE_WHEEL_SCROLL:
+    case SDL_EVENT_DIR_MOUSE_MOTION_SCROLL:
+        if (event->event_id == SDL_EVENT_DIR_MOUSE_WHEEL_SCROLL) {
+            if (event->mouse_wheel.delta_y > 0) {
+                y_top_dir += 20;  // XXX why 20
+            } else if (event->mouse_wheel.delta_y < 0) {
+                y_top_dir -= 20;
+            }
+        } else {
+            y_top_dir += event->mouse_motion.delta_y;
         }
 
         int y_top_limit = -((max_file_info - 1) / cols + 1) * DIR_PIXELS_HEIGHT + 600;
-        if (y_top < y_top_limit) y_top = y_top_limit;
-        if (y_top > 0) y_top = 0;
+        if (y_top_dir < y_top_limit) y_top_dir = y_top_limit;
+        if (y_top_dir > 0) y_top_dir = 0;
         break;
 
     case SDL_EVENT_DIR_CHOICE...SDL_EVENT_DIR_CHOICE+1000:
