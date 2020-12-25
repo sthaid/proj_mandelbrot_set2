@@ -130,6 +130,9 @@ int main(int argc, char **argv)
     // initialize the caching code
     pixel_size_at_zoom0 = 4. / win_width;
     cache_init(pixel_size_at_zoom0);
+    if (max_file_info < 1) {
+        FATAL("minimum of one file is required, max_file_info=%d\n", max_file_info);
+    }
 
     // run the pane manger;
     // the sdl_pane_manager is the runtime loop, and it will repeatedly call the pane_hndlr,
@@ -517,9 +520,9 @@ static void render_hndlr_mbs(pane_cx_t *pane_cx)
                 pane, loc.x, loc.y, FONTSZ, " > ", SDL_LIGHT_BLUE, SDL_BLACK,
                 SDL_EVENT_MBS_SHOW_NEXT_FILE, SDL_EVENT_TYPE_MOUSE_CLICK, pane_cx);
 
-        loc = (rect_t){pane->w-5*fcw, pane->h-fch, 5*fcw, fch};
+        loc = (rect_t){pane->w-3*fcw, pane->h-fch, 3*fcw, fch};
         sdl_render_text_and_register_event(
-                pane, loc.x, loc.y, FONTSZ, "FILES", SDL_LIGHT_BLUE, SDL_BLACK,
+                pane, loc.x, loc.y, FONTSZ, "DIR", SDL_LIGHT_BLUE, SDL_BLACK,
                 SDL_EVENT_MBS_FILES, SDL_EVENT_TYPE_MOUSE_CLICK, pane_cx);
 
         loc = (rect_t){pane->w/2-7*fcw/2, pane->h-fch, 7*fcw, fch};
@@ -645,7 +648,7 @@ static int event_hndlr_mbs(pane_cx_t *pane_cx, sdl_event_t *event)
         slide_show_enabled = !slide_show_enabled;
         slide_show_time_us = 0;
         slide_show_idx = -1;
-        set_alert(SDL_WHITE, "SLIDE SHOW IS %s", slide_show_enabled ? "STARTING" : "STOPPED");
+        set_alert(SDL_WHITE, "SLIDE SHOW %s", slide_show_enabled ? "STARTING" : "STOPPED");
         break;
 
     // --- XXX  ---
@@ -877,6 +880,10 @@ static int save_file(rect_t *pane)
 
 static void show_file(int idx)
 {
+    if (idx < 0 || idx >= max_file_info) {
+        FATAL("invalid idx %d, max_file_info=%d\n", idx, max_file_info);
+    }
+
     file_info[idx]->selected = false;
 
     cache_file_read(idx);
@@ -1165,7 +1172,7 @@ static void render_hndlr_directory(pane_cx_t *pane_cx)
     for (select_cnt=0, idx=0; idx < max_file_info; idx++) {
         if (file_info[idx]->selected) select_cnt++;
     }
-    if (select_cnt) {
+    if (select_cnt > 0 && select_cnt < max_file_info ) {
         loc = (rect_t){0, pane->h-fch, 6*fcw, fch};
         char str[100];
         sprintf(str, "DELETE %d FILE%s", select_cnt, select_cnt>1?"S":"");
