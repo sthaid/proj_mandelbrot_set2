@@ -246,7 +246,7 @@ static int last_file_num;
 
 static int compare(const void *arg1, const void *arg2)
 {
-    return *(int*)arg1 > *(int*)arg2;
+    return *(int*)arg1 - *(int*)arg2;
 }
 
 static void cache_file_init(void)
