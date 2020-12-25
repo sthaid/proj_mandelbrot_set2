@@ -73,7 +73,10 @@ typedef struct {
     bool             phase1_spiral_done;
     spiral_t         phase2_spiral;
     bool             phase2_spiral_done;
-    unsigned short (*mbsval)[CACHE_HEIGHT][CACHE_WIDTH];  // xxx porting problem
+    union {
+        unsigned short (*mbsval)[CACHE_HEIGHT][CACHE_WIDTH];
+        uint64_t pad;  // ensure the cache_t is the same size on Android
+    };
 } cache_t;
 
 typedef struct {
@@ -519,12 +522,13 @@ void cache_file_read(int idx)
             FATAL("ffce.cache.zoom=%d out of range\n", z);
         }
 
-        // xxxx  will remove later
+        // set cache[z] to the ffce.cache value that was read above;
+        // while preserving the cache[z].mbsval
         ffce.cache.mbsval = cache[z].mbsval;
         cache[z] = ffce.cache;
 
-        // read mbsval_data, and decompress to cache[z].mbsval
-        //
+        // read mbsval_data, and decompress to cache[z].mbsval ...
+
         // - allocate buffer to read the compressed_mbsval_data into
         compressed_mbsval_data = malloc(ffce.compressed_mbsval_datalen);
         if (compressed_mbsval_data == NULL) {
@@ -615,7 +619,8 @@ void cache_file_update(int idx, int file_type)
             // construct file_format_cache_t (ffce)
             memset(&ffce,0,sizeof(ffce));
             ffce.magic = MAGIC_FFCE;
-            ffce.cache = cache[z];    ffce.cache.mbsval = NULL; //xxx temp
+            ffce.cache = cache[z];    
+            ffce.cache.mbsval = NULL;
             ffce.compressed_mbsval_datalen = destlen;
 
             // write the ffce and compressed_mbsval_data
