@@ -1,0 +1,72 @@
+#!/bin/bash
+
+gcc -Wall -g -o update_file update_file.c -lz
+if [ $? -ne 0 ]; then
+  echo "ERROR compile failed"
+  exit
+fi
+
+cd ../assets
+if [ $? -ne 0 ]; then
+  echo "ERROR cd assets failed"
+  exit
+fi
+
+echo "REMOVING mbs*.dat"
+rm mbs*.dat
+echo
+
+echo "COPYING MBS FILES FROM PRIOR mbs program"
+cp ~/.mbs_cache/mbs_0043.dat  mbs2_0000.dat
+cp ~/.mbs_cache/mbs_0001.dat  mbs2_0001.dat
+cp ~/.mbs_cache/mbs_0003.dat  mbs2_0002.dat
+cp ~/.mbs_cache/mbs_0004.dat  mbs2_0003.dat
+cp ~/.mbs_cache/mbs_0005.dat  mbs2_0004.dat
+cp ~/.mbs_cache/mbs_0006.dat  mbs2_0005.dat
+cp ~/.mbs_cache/mbs_0011.dat  mbs2_0006.dat
+cp ~/.mbs_cache/mbs_0013.dat  mbs2_0007.dat
+cp ~/.mbs_cache/mbs_0015.dat  mbs2_0008.dat
+cp ~/.mbs_cache/mbs_0018.dat  mbs2_0009.dat
+cp ~/.mbs_cache/mbs_0021.dat  mbs2_0010.dat
+cp ~/.mbs_cache/mbs_0024.dat  mbs2_0011.dat
+cp ~/.mbs_cache/mbs_0028.dat  mbs2_0012.dat
+cp ~/.mbs_cache/mbs_0029.dat  mbs2_0013.dat
+cp ~/.mbs_cache/mbs_0031.dat  mbs2_0014.dat
+cp ~/.mbs_cache/mbs_0033.dat  mbs2_0015.dat
+cp ~/.mbs_cache/mbs_0034.dat  mbs2_0016.dat
+cp ~/.mbs_cache/mbs_0035.dat  mbs2_0017.dat
+cp ~/.mbs_cache/mbs_0036.dat  mbs2_0018.dat
+cp ~/.mbs_cache/mbs_0037.dat  mbs2_0019.dat
+cp ~/.mbs_cache/mbs_0042.dat  mbs2_0020.dat
+echo
+
+echo "UPDATING THE FILE FORMAT"
+../devel/update_file mbs2_0000.dat
+../devel/update_file mbs2_0001.dat
+../devel/update_file mbs2_0002.dat
+../devel/update_file mbs2_0003.dat
+../devel/update_file mbs2_0004.dat
+../devel/update_file mbs2_0005.dat
+../devel/update_file mbs2_0006.dat
+../devel/update_file mbs2_0007.dat
+../devel/update_file mbs2_0008.dat
+../devel/update_file mbs2_0009.dat
+../devel/update_file mbs2_0010.dat
+../devel/update_file mbs2_0011.dat
+../devel/update_file mbs2_0012.dat
+../devel/update_file mbs2_0013.dat
+../devel/update_file mbs2_0014.dat
+../devel/update_file mbs2_0015.dat
+../devel/update_file mbs2_0016.dat
+../devel/update_file mbs2_0017.dat
+../devel/update_file mbs2_0018.dat
+../devel/update_file mbs2_0019.dat
+../devel/update_file mbs2_0020.dat
+echo
+
+echo "REMOVING ~/.mbs2"
+rm -rf ~/.mbs2
+echo
+
+echo DONE
+

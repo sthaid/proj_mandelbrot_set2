@@ -1153,6 +1153,8 @@ static void render_hndlr_directory(pane_cx_t *pane_cx)
     loc = (rect_t){0, pane->h-(int)(1.5*fch), pane->w, (int)(1.5*fch)};
     sdl_render_fill_rect(pane, &loc, SDL_BLACK);
 
+    // XXX also clear events from this region
+
     // register for additional events
 
     loc = (rect_t){pane->w-4*fcw, pane->h-fch, 4*fcw, fch};

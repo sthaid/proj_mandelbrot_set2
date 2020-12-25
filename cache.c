@@ -260,20 +260,20 @@ static void cache_file_init(void)
     // - /data/data/org.sthaid.mbs2/files    on Android
     strcpy(cache_dir, get_internal_storage_path());
 
-    // copy the asset files, that are mbs_nnnn.dat, to internal_storage;
+    // copy the asset files, that are mbs2_nnnn.dat, to internal_storage;
     // the files being copied are the samples that are provided with this program,
     //  the program's user can save additional files to internal_storage
     cache_file_copy_assets_to_internal_storage();
 
     // get sorted list of file_num contained in the cache_dir;
-    // the file_name format is 'mbs_NNNN.dat', where NNNN is the file_num
+    // the file_name format is 'mbs2_NNNN.dat', where NNNN is the file_num
     d = opendir(cache_dir);
     if (d == NULL) {
         FATAL("failed opendir %s, %s\n", cache_dir, strerror(errno));
     }
     max_file = 0;
     while ((de = readdir(d)) != NULL) {
-        if (sscanf(de->d_name, "mbs_%d_.dat", &file_num) != 1) {
+        if (sscanf(de->d_name, "mbs2_%d_.dat", &file_num) != 1) {
             continue;
         }
         file_num_array[max_file++] = file_num;
@@ -293,7 +293,7 @@ static void cache_file_init(void)
         int fd, len;
 
         // allocate memory for, and read the cache_file_info
-        sprintf(fn, "mbs_%04d.dat", file_num_array[idx]);
+        sprintf(fn, "mbs2_%04d.dat", file_num_array[idx]);
         fi = calloc(1,sizeof(cache_file_info_t));
         fd = open(PATHNAME(fn), O_RDONLY);
         if (fd < 0) {
@@ -368,10 +368,10 @@ static void cache_file_copy_assets_to_internal_storage(void)
         FATAL("list_asset_files failed\n");
     }
 
-    // loop over the list of files, and copy those whose names are mbs_nnnn.dat to
+    // loop over the list of files, and copy those whose names are mbs2_nnnn.dat to
     // internal storage
     for (i = 0; i < max; i++) {
-        if (strstr(pathnames[i], "mbs_") == NULL || strstr(pathnames[i], ".dat") == NULL) {
+        if (strstr(pathnames[i], "mbs2_") == NULL || strstr(pathnames[i], ".dat") == NULL) {
             continue;
         }
 
@@ -418,7 +418,7 @@ int cache_file_create(complex_t ctr, int zoom, double zoom_fraction, int wavelen
     // the cache_file_update routine can be made to add cached mbs values to this file.
 
     // create a new file_name
-    sprintf(file_name, "mbs_%04d.dat", ++last_file_num);
+    sprintf(file_name, "mbs2_%04d.dat", ++last_file_num);
 
     // initialize file header buffer
     memset(fi, 0, sizeof(cache_file_info_t));
