@@ -22,11 +22,6 @@
 #define WAVELEN_START_DEFAULT     400
 #define WAVELEN_SCALE_DEFAULT     2
 
-#define DISPLAY_SELECT_MBS        1
-#define DISPLAY_SELECT_HELP       2
-//#define DISPLAY_SELECT_COLOR_LUT  3  //xxx
-#define DISPLAY_SELECT_DIRECTORY  4
-
 // xxx
 //#ifndef ANDROID
 //#define FONTSZ  60
@@ -81,7 +76,6 @@ static int event_hndlr_color_lut(pane_cx_t *pane_cx, sdl_event_t *event);
 
 static void render_hndlr_directory(pane_cx_t *pane_cx);
 static int event_hndlr_directory(pane_cx_t *pane_cx, sdl_event_t *event);
-static void thread_directory(void);
 
 // -----------------  MAIN  -------------------------------------------------
 
@@ -156,13 +150,24 @@ int main(int argc, char **argv)
 
 // -----------------  PANE_HNDLR  ---------------------------------------
 
+#define DISPLAY_MBS        1
+#define DISPLAY_HELP       2
+//#define DISPLAY_COLOR_LUT  3  //xxx
+#define DISPLAY_DIRECTORY  4
+
+#define SET_DISPLAY(x) \
+    do { \
+        display_select = (x); \
+        display_select_count++; \
+    } while (0)
+
 typedef struct {
     char     str[200];
     int      color;
     uint64_t expire_us;
 } alert_t;
 
-static int     display_select       = DISPLAY_SELECT_MBS;
+static int     display_select       = DISPLAY_MBS;
 static int     display_select_count = 1;
 static alert_t alert                = {.expire_us = 0};
 
@@ -204,18 +209,18 @@ static int pane_hndlr(pane_cx_t * pane_cx, int request, void * init_params, sdl_
 
         // call the selected render_hndlr
         switch (display_select) {
-        case DISPLAY_SELECT_MBS:
+        case DISPLAY_MBS:
             render_hndlr_mbs(pane_cx);
             break;
-        case DISPLAY_SELECT_HELP:
+        case DISPLAY_HELP:
             render_hndlr_help(pane_cx);
             break;
 #if 0 //xxx
-        case DISPLAY_SELECT_COLOR_LUT:
+        case DISPLAY_COLOR_LUT:
             render_hndlr_color_lut(pane_cx);
             break;
 #endif
-        case DISPLAY_SELECT_DIRECTORY:
+        case DISPLAY_DIRECTORY:
             render_hndlr_directory(pane_cx);
             break;
         }
@@ -235,53 +240,32 @@ static int pane_hndlr(pane_cx_t * pane_cx, int request, void * init_params, sdl_
 
         // first handle events common to all displays
         switch (event->event_id) {
-#if 0
+#if 1
         case 'f':  // full screen
             full_screen = !full_screen;
-            DEBUG("set full_screen to %d\n", full_screen);
+            INFO("set full_screen to %d\n", full_screen);
             sdl_full_screen(full_screen);
             break;
         case 'q':  // quit
             rc = PANE_HANDLER_RET_PANE_TERMINATE;
-            break;
-        case 'h':  // display help
-            display_select = (display_select == DISPLAY_SELECT_HELP
-                              ? DISPLAY_SELECT_MBS : DISPLAY_SELECT_HELP);
-            display_select_count++;  // xxx get rid of display_select_count
-            break;
-        case 'c':  // display color lut
-            display_select = (display_select == DISPLAY_SELECT_COLOR_LUT
-                              ? DISPLAY_SELECT_MBS : DISPLAY_SELECT_COLOR_LUT);
-            display_select_count++;
-            break;
-        case 'd':  // display directory
-            display_select = (display_select == DISPLAY_SELECT_DIRECTORY
-                              ? DISPLAY_SELECT_MBS : DISPLAY_SELECT_DIRECTORY);
-            display_select_count++;
-            break;
-        case SDL_EVENT_KEY_ESC: // another way back to the MBS display
-            if (display_select != DISPLAY_SELECT_MBS) {
-                display_select = DISPLAY_SELECT_MBS;
-                display_select_count++;
-            }
             break;
 #endif
 
         // it is not a common event, so call the selected event_hndlr
         default:
             switch (display_select) {
-            case DISPLAY_SELECT_MBS:
+            case DISPLAY_MBS:
                 rc = event_hndlr_mbs(pane_cx, event);
                 break;
-            case DISPLAY_SELECT_HELP:
+            case DISPLAY_HELP:
                 rc = event_hndlr_help(pane_cx, event);
                 break;
 #if 0
-            case DISPLAY_SELECT_COLOR_LUT:
+            case DISPLAY_COLOR_LUT:
                 rc = event_hndlr_color_lut(pane_cx, event);
                 break;
 #endif
-            case DISPLAY_SELECT_DIRECTORY:
+            case DISPLAY_DIRECTORY:
                 rc = event_hndlr_directory(pane_cx, event);
                 break;
             }
@@ -346,10 +330,6 @@ static int          zoom                         = 0;
 static double       zoom_fraction                = 0;
 static bool         display_info                 = false;
 static bool         debug_force_cache_thread_run = false;
-static char         display_file_name[100]       = "";  // xxx maybe not needed
-static char         display_file_type            = -1; 
-static complex_t    display_file_ctr             = 0;
-static int          display_file_idx             = -1;
 static bool         ctrls_enabled                = true;
 static bool         slide_show_enabled           = false;
 static uint64_t     slide_show_time_us           = 0;
@@ -588,9 +568,7 @@ static int event_hndlr_mbs(pane_cx_t *pane_cx, sdl_event_t *event)
 
     // --- XXX ---
     case SDL_EVENT_MBS_HELP:
-        // XXX bump the count wheneever changng  - XXX but why?
-        display_select = DISPLAY_SELECT_HELP;
-        display_select_count++;
+        SET_DISPLAY(DISPLAY_HELP);
         break;
 
     // --- XXX ---
@@ -602,20 +580,8 @@ static int event_hndlr_mbs(pane_cx_t *pane_cx, sdl_event_t *event)
     case SDL_EVENT_MBS_SHOW_NEXT_FILE:
     case SDL_EVENT_MBS_SHOW_PRIOR_FILE: { // xxx also slide show mode ?
         static int idx = -1;
-        static int last_display_select_count;
 
-        if (display_select_count != last_display_select_count) {
-            cache_file_garbage_collect(); // xxx review this, and display_select_count
-            last_display_select_count = display_select_count;
-        }
-
-        // xxx simplify
-        if (display_file_idx != -1) {
-            idx = display_file_idx;
-            display_file_idx = -1;
-        }
         idx = idx + (event->event_id == SDL_EVENT_MBS_SHOW_NEXT_FILE ? 1 : -1);
-
         if (idx < 0) {
             idx = max_file_info-1;
         } else if (idx >= max_file_info) {
@@ -626,8 +592,7 @@ static int event_hndlr_mbs(pane_cx_t *pane_cx, sdl_event_t *event)
         break; }
 
     case SDL_EVENT_MBS_FILES:
-        display_select = DISPLAY_SELECT_DIRECTORY;
-        display_select_count++;
+        SET_DISPLAY(DISPLAY_DIRECTORY);
         break;
 
     // --- ADUST ZOOM  ---
@@ -836,30 +801,12 @@ static void display_info_proc(rect_t *pane, uint64_t update_intvl_ms)
     int  n=0, max_len=0, i;
     int  phase_inprog, zoom_lvl_inprog;
 
-    // print info to line[] array
+    // print info to line[] array xxx reformat
     sprintf(line[n++], "Window: %d %d", pane->w, pane->h);
     sprintf(line[n++], "Ctr-A:  %+0.9f", creal(ctr));
     sprintf(line[n++], "Ctr-B:  %+0.9f", cimag(ctr));
     sprintf(line[n++], "Zoom:   %0.2f", ZOOM_TOTAL);
     sprintf(line[n++], "Color:  %d %d", wavelen_start, wavelen_scale);   
-    if (display_file_ctr == ctr) {
-        sprintf(line[n++], "File:   %s", display_file_name);
-        sprintf(line[n++], "Cache:  %s", 
-                (display_file_type == 0 ? "none"   :
-                 display_file_type == 1 ? "single" :
-                 display_file_type == 2 ? "full"   :
-                                          "????"));
-    }
-    if (debug_enabled) {
-        sprintf(line[n++], "Debug:  %s", debug_enabled ? "True" : "False");
-        sprintf(line[n++], "Intvl:  %ld ms", update_intvl_ms);
-        cache_status(&phase_inprog, &zoom_lvl_inprog);
-        if (phase_inprog == 0) {
-            sprintf(line[n++], "Cache:  Idle");
-        } else {
-            sprintf(line[n++], "Cache:  Phase%d Z=%d", phase_inprog, zoom_lvl_inprog);
-        }
-    }
 
     // determine each line_len and the max_len
     for (i = 0; i < n; i++) {
@@ -930,6 +877,8 @@ static int save_file(rect_t *pane)
 
 static void show_file(int idx)
 {
+    file_info[idx]->selected = false;
+
     cache_file_read(idx);
 
     ctr           = file_info[idx]->ctr;
@@ -939,10 +888,6 @@ static void show_file(int idx)
     wavelen_scale = file_info[idx]->wavelen_scale;
 
     init_color_lut(wavelen_start, wavelen_scale, color_lut);
-
-    strcpy(display_file_name, file_info[idx]->file_name);
-    display_file_type = file_info[idx]->file_type;
-    display_file_ctr = file_info[idx]->ctr;
 }
 
 // - - - - - - - - -  PANE_HNDLR : HELP  - - - - - - - - - - - - - - - -
@@ -1031,8 +976,7 @@ static int event_hndlr_help(pane_cx_t *pane_cx, sdl_event_t *event)
         if (y_top_help > 0) y_top_help = 0;
         break; }
     case SDL_EVENT_HELP_BACK:
-        display_select = DISPLAY_SELECT_MBS;
-        display_select_count++;
+        SET_DISPLAY(DISPLAY_MBS);
         break;
     }
 
@@ -1099,12 +1043,15 @@ static int event_hndlr_color_lut(pane_cx_t *pane_cx, sdl_event_t *event)
 // - - - - - - - - -  PANE_HNDLR : DIRECTORY  - - - - - - - - - - - - -
 
 static bool init_request;
-
 static int  y_top;
-static int  thread_run;
-static int  thread_preempt_loc;
-static int  activity_indicator;
-static bool selected[1000];
+
+#define CLEAR_ALL_FILE_INFO_SELECTED \
+    do { \
+        int _idx; \
+        for (_idx = 0; _idx < max_file_info; _idx++) { \
+            file_info[_idx]->selected = false; \
+        } \
+    } while (0)
 
 static void render_hndlr_directory(pane_cx_t *pane_cx)
 {
@@ -1115,9 +1062,11 @@ static void render_hndlr_directory(pane_cx_t *pane_cx)
     static texture_t texture;
     static int       last_display_select_count;
 
-    #define SDL_EVENT_SCROLL_WHEEL (SDL_EVENT_USER_DEFINED + 0)
-    #define SDL_EVENT_CHOICE       (SDL_EVENT_USER_DEFINED + 10)
-    #define SDL_EVENT_SELECT       (SDL_EVENT_USER_DEFINED + 1100)
+    #define SDL_EVENT_DIR_SCROLL_WHEEL (SDL_EVENT_USER_DEFINED + 0)
+    #define SDL_EVENT_DIR_DELETE       (SDL_EVENT_USER_DEFINED + 1)
+    #define SDL_EVENT_DIR_BACK         (SDL_EVENT_USER_DEFINED + 2)
+    #define SDL_EVENT_DIR_CHOICE       (SDL_EVENT_USER_DEFINED + 10)
+    #define SDL_EVENT_DIR_SELECT       (SDL_EVENT_USER_DEFINED + 1100)
 
     // one time init
     if (texture == NULL) {
@@ -1127,22 +1076,11 @@ static void render_hndlr_directory(pane_cx_t *pane_cx)
     // initialize when this display has been selected, or
     // when the init_request flag has been set (init_request is set when files are deleted)
     if (display_select_count != last_display_select_count || init_request) {
-        cache_file_garbage_collect();
-
-        y_top              = 0;
-        thread_run         = 0;
-        thread_preempt_loc = 0;
-        activity_indicator = -1;
-        memset(selected, 0, sizeof(selected));
-
+        CLEAR_ALL_FILE_INFO_SELECTED;
+        y_top = 0;
         init_request = false;
         last_display_select_count = display_select_count;
     }
-
-    // call thread_directory, this routine is coded as a thread but in reality
-    //  the call to thread_directory returns quickly;
-    // this routine is responsible for changing the file_type of the selected files
-    thread_directory();
 
     // display the directory images, for each image:
     // - the saved place image is first displayed, followed by
@@ -1152,13 +1090,6 @@ static void render_hndlr_directory(pane_cx_t *pane_cx)
     // - file_type
     for (idx = 0; idx < max_file_info; idx++) {
         cache_file_info_t *fi = file_info[idx];
-
-        // if file has been deleted then continue,
-        // - this should not happen because whenever a file is deleted init_request is set,
-        //   which causes cache_file_garbage_collect to be called
-        if (fi->deleted) {
-            continue;
-        }
 
         // determine location of upper left
         x = (idx % cols) * DIR_PIXELS_WIDTH;
@@ -1173,41 +1104,17 @@ static void render_hndlr_directory(pane_cx_t *pane_cx)
         sdl_update_texture(texture, (void*)fi->dir_pixels, DIR_PIXELS_WIDTH*BYTES_PER_PIXEL);
         sdl_render_texture(pane, x, y, texture);
 
-        // if the activity_indicator is active for this file then 
-        // display the activity indicator
-        if (activity_indicator == idx) {
-            static char *ind = "|/-\\";
-            static int   ind_idx;
-            sdl_render_printf(pane, 
-                              x+(DIR_PIXELS_WIDTH/2-COL2X(1,80)/2), y+(DIR_PIXELS_HEIGHT/2-ROW2Y(1,80)/2), 
-                              80, SDL_WHITE, SDL_BLACK, 
-                              "%c", ind[ind_idx]);
-            ind_idx = (ind_idx + 1) % 4;
-        }
-
         // display a small red box in it's upper left, if this image is selected
-        if (selected[idx]) {
+        if (fi->selected) {
             rect_t loc = {x,y,17,20};
             sdl_render_fill_rect(pane, &loc, SDL_RED);
         }
 
-        // display the file number
-        sdl_render_printf(pane, x+(DIR_PIXELS_WIDTH/3-COL2X(2,20)), y+0, 20, SDL_WHITE, SDL_BLACK, 
-            "%c%c%c%c", 
-            fi->file_name[4], fi->file_name[5], fi->file_name[6], fi->file_name[7]);
-
-        // display the file zoom  
-        sdl_render_printf(pane, x+(DIR_PIXELS_WIDTH*2/3-COL2X(2,20)), y+0, 20, SDL_WHITE, SDL_BLACK, 
-            "%0.1f", fi->zoom+fi->zoom_fraction);
-
-        // display file type
-        sdl_render_printf(pane, x+DIR_PIXELS_WIDTH-COL2X(1,20), y+0, 20, SDL_WHITE, SDL_BLACK,
-            "%d", fi->file_type);
-
         // register for events for each directory image that is displayed
+        // XXX later need to redo how selected event works
         rect_t loc = {x,y,DIR_PIXELS_WIDTH,DIR_PIXELS_HEIGHT};
-        sdl_register_event(pane, &loc, SDL_EVENT_CHOICE + idx, SDL_EVENT_TYPE_MOUSE_CLICK, pane_cx);
-        sdl_register_event(pane, &loc, SDL_EVENT_SELECT + idx, SDL_EVENT_TYPE_MOUSE_RIGHT_CLICK, pane_cx);
+        sdl_register_event(pane, &loc, SDL_EVENT_DIR_CHOICE + idx, SDL_EVENT_TYPE_MOUSE_CLICK, pane_cx);
+        sdl_register_event(pane, &loc, SDL_EVENT_DIR_SELECT + idx, SDL_EVENT_TYPE_MOUSE_RIGHT_CLICK, pane_cx);
     }
 
     // separate the directory images with black lines
@@ -1231,7 +1138,19 @@ static void render_hndlr_directory(pane_cx_t *pane_cx)
     }
 
     // register for additional events
-    sdl_register_event(pane, pane, SDL_EVENT_SCROLL_WHEEL, SDL_EVENT_TYPE_MOUSE_WHEEL, pane_cx);
+    sdl_register_event(pane, pane, SDL_EVENT_DIR_SCROLL_WHEEL, SDL_EVENT_TYPE_MOUSE_WHEEL, pane_cx);
+
+    int fcw = sdl_font_char_width(FONTSZ);  // xxx one define
+    int fch = sdl_font_char_height(FONTSZ);
+    rect_t loc = (rect_t){pane->w-4*fcw, pane->h-fch, 4*fcw, fch};
+    sdl_render_text_and_register_event(
+            pane, loc.x, loc.y, FONTSZ, "BACK", SDL_LIGHT_BLUE, SDL_BLACK,
+            SDL_EVENT_DIR_BACK, SDL_EVENT_TYPE_MOUSE_CLICK, pane_cx);
+
+    loc = (rect_t){0, pane->h-fch, 6*fcw, fch};
+    sdl_render_text_and_register_event(
+            pane, loc.x, loc.y, FONTSZ, "DELETE", SDL_LIGHT_BLUE, SDL_BLACK,
+            SDL_EVENT_DIR_DELETE, SDL_EVENT_TYPE_MOUSE_CLICK, pane_cx);
 }
 
 static int event_hndlr_directory(pane_cx_t *pane_cx, sdl_event_t *event)
@@ -1239,36 +1158,14 @@ static int event_hndlr_directory(pane_cx_t *pane_cx, sdl_event_t *event)
     rect_t * pane = &pane_cx->pane;
     int      cols = (pane->w/DIR_PIXELS_WIDTH == 0 ? 1 : pane->w/DIR_PIXELS_WIDTH);
     int      rc   = PANE_HANDLER_RET_DISPLAY_REDRAW;
-    int      idx;
+    int      idx, cnt;
 
     switch (event->event_id) {
-    case SDL_EVENT_SCROLL_WHEEL:
-    case SDL_EVENT_KEY_PGUP:
-    case SDL_EVENT_KEY_PGDN:
-    case SDL_EVENT_KEY_UP_ARROW:
-    case SDL_EVENT_KEY_DOWN_ARROW:
-    case SDL_EVENT_KEY_HOME:
-    case SDL_EVENT_KEY_END:
-        if (event->event_id == SDL_EVENT_SCROLL_WHEEL) {
-            if (event->mouse_wheel.delta_y > 0) {
-                y_top += 20;
-            } else if (event->mouse_wheel.delta_y < 0) {
-                y_top -= 20;
-            }
-        } else if (event->event_id == SDL_EVENT_KEY_PGUP) {
-            y_top += 600;
-        } else if (event->event_id == SDL_EVENT_KEY_PGDN) {
-            y_top -= 600;
-        } else if (event->event_id == SDL_EVENT_KEY_UP_ARROW) {
-            y_top += 20;
-        } else if (event->event_id == SDL_EVENT_KEY_DOWN_ARROW) {
+    case SDL_EVENT_DIR_SCROLL_WHEEL:
+        if (event->mouse_wheel.delta_y > 0) {
+            y_top += 20;  // XXX why 20
+        } else if (event->mouse_wheel.delta_y < 0) {
             y_top -= 20;
-        } else if (event->event_id == SDL_EVENT_KEY_HOME) {
-            y_top = 0;
-        } else if (event->event_id == SDL_EVENT_KEY_END) {
-            y_top = -((max_file_info - 1) / cols + 1) * DIR_PIXELS_HEIGHT + 600;
-        } else {
-            FATAL("unexpected event_id 0x%x\n", event->event_id);
         }
 
         int y_top_limit = -((max_file_info - 1) / cols + 1) * DIR_PIXELS_HEIGHT + 600;
@@ -1276,176 +1173,41 @@ static int event_hndlr_directory(pane_cx_t *pane_cx, sdl_event_t *event)
         if (y_top > 0) y_top = 0;
         break;
 
-    case SDL_EVENT_CHOICE...SDL_EVENT_CHOICE+1000:
-        idx = event->event_id - SDL_EVENT_CHOICE;
+    case SDL_EVENT_DIR_CHOICE...SDL_EVENT_DIR_CHOICE+1000:
+        idx = event->event_id - SDL_EVENT_DIR_CHOICE;
+        show_file(idx);
 
-        cache_file_read(idx);
-
-        ctr           = file_info[idx]->ctr;
-        zoom          = file_info[idx]->zoom;
-        zoom_fraction = file_info[idx]->zoom_fraction;
-        wavelen_start = file_info[idx]->wavelen_start;
-        wavelen_scale = file_info[idx]->wavelen_scale;
-
-        init_color_lut(wavelen_start, wavelen_scale, color_lut);
-
-        strcpy(display_file_name, file_info[idx]->file_name);
-        display_file_type = file_info[idx]->file_type;
-        display_file_ctr  = file_info[idx]->ctr;
-        display_file_idx  = idx;
-
-        display_select = DISPLAY_SELECT_MBS;
-        display_select_count++;
+        CLEAR_ALL_FILE_INFO_SELECTED;
+        SET_DISPLAY(DISPLAY_MBS);
         break;
 
-    case SDL_EVENT_SELECT...SDL_EVENT_SELECT+1000:
-        idx = event->event_id - SDL_EVENT_SELECT;
-        selected[idx] = !selected[idx];
+    case SDL_EVENT_DIR_SELECT...SDL_EVENT_DIR_SELECT+1000:
+        idx = event->event_id - SDL_EVENT_DIR_SELECT;
+        file_info[idx]->selected = !file_info[idx]->selected;
         break;
-    case 's':  // select all
+
+    case SDL_EVENT_DIR_DELETE:
+        cnt = 0;
         for (idx = 0; idx < max_file_info; idx++) {
-            selected[idx] = true;
+            if (file_info[idx]->selected) {
+                cache_file_delete(idx);
+                cnt++;
+                idx--;
+            }
         }
-        break;
-    case 'S':  // de-select all
-        for (idx = 0; idx < max_file_info; idx++) {
-            selected[idx] = false;
-        }
-        break;
-
-    case SDL_EVENT_KEY_DELETE:  // delete selected files
-        if (thread_run != 0) {
-            set_alert(SDL_RED, "BUSY");
+        if (cnt == 0) {
+            set_alert(SDL_RED, "NOTHING SELECTED");
             break;
         }
-        for (idx = 0; idx < max_file_info; idx++) {
-            if (!selected[idx] || file_info[idx]->deleted) {
-                selected[idx] = false;
-                continue;
-            }
-            cache_file_delete(idx);
-            selected[idx] = false;
-        }
+        set_alert(SDL_GREEN, "%d FILE%s DELETED", cnt, cnt>1?"S":"");
         init_request = true;
         break;
 
-    case '0': {  // transform selected files to file_type 0, smallest size & no cached values
-        if (thread_run != 0) {
-            set_alert(SDL_RED, "BUSY");
-            break;
-        }
-        for (idx = 0; idx < max_file_info; idx++) {
-            if (!selected[idx] || file_info[idx]->deleted) {
-                selected[idx] = false;
-                continue;
-            }
-            cache_file_update(idx, 0);
-            selected[idx] = false;
-        }
-        break; }
-    case '1':  // transform selected files to file_type 1, intermediate size file and cache 1 zoom level
-        if (thread_run != 0) {
-            set_alert(SDL_RED, "BUSY");
-            break;
-        }
-        thread_run = 1;
-        break;
-    case '2':  // transform selected files to file_type 2, large size file and cache all zoom levels
-        if (thread_run != 0) {
-            set_alert(SDL_RED, "BUSY");
-            break;
-        }
-        thread_run = 2;
+    case SDL_EVENT_DIR_BACK:
+        CLEAR_ALL_FILE_INFO_SELECTED;
+        SET_DISPLAY(DISPLAY_MBS);
         break;
     }
 
     return rc;
-}
-
-// Due to the way the PREEMPT macros works, this pseudo thread should
-// use only static variables. Automatic variables could be used, only 
-// if there is no intervening PREEMPT
-static void thread_directory(void)
-{
-    #define LABEL(n) lab_ ## n
-    #define PREEMPT(n) \
-        { \
-        thread_preempt_loc = n; \
-        return; \
-        LABEL(n): ; \
-        }
-
-    switch (thread_preempt_loc) {
-    case 0: break;
-    case 1: goto lab_1;
-    case 2: goto lab_2;
-    default: FATAL("thread_preempt_loc=%d\n", thread_preempt_loc);
-    }
-
-    static int idx;
-
-    idx = 0;
-
-    while (true) {
-        while (thread_run == 0) {
-            PREEMPT(1);
-        }
-
-        INFO("starting, thread_run=%d\n", thread_run);
-
-        // loop over all files
-        for (idx = 0; idx < max_file_info; idx++) {
-            // if the file is not selected, or has been marked deleted then continue
-            if (!selected[idx] || file_info[idx]->deleted) {
-                selected[idx] = false;
-                continue;
-            }
-
-            // if the file's file_type is already equal to what is requested then continue
-            if (file_info[idx]->file_type == thread_run) {
-                selected[idx] = false;
-                continue;
-            }
-
-            // print when a file is being processed
-            INFO("transforming %s to file_type %d ...\n", file_info[idx]->file_name, thread_run);
-
-            // enable the activity_indicator, for the file being worked
-            activity_indicator = idx;
-
-            // instruct the cache code to begin caching for this file
-            cache_param_change(file_info[idx]->ctr, file_info[idx]->zoom, CACHE_WIDTH, CACHE_HEIGHT, true);
-
-            // wait for caching to complete 
-            INFO("- waiting for cache complete\n");
-            while (true) {
-                if ((thread_run == 1 && cache_thread_first_phase1_zoom_lvl_is_finished()) ||
-                    (thread_run == 2 && cache_thread_all_is_finished()))
-                {
-                    break;
-                }
-                if (!selected[idx]) {
-                    break;
-                }
-                PREEMPT(2);
-            }
-            if (!selected[idx]) {
-                activity_indicator = -1;
-                continue;
-            }
-
-            // update file
-            INFO("- updating file %s\n", file_info[idx]->file_name);
-            cache_file_update(idx, thread_run);
-            INFO("- updating file completed\n");
-
-            // done updating this file, clear the activity indicator and selected
-            activity_indicator = -1;
-            selected[idx] = false;
-        }
-
-        // done, set thread_run to 0 because this is now idle
-        INFO("done\n");
-        thread_run = 0;
-    }
 }

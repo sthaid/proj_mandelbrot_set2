@@ -310,9 +310,8 @@ static void cache_file_init(void)
         if (strcmp(fi->file_name, fn) != 0) {
             FATAL("file %s invalid file_name %s\n", fn, fi->file_name);
         }
-        if (fi->deleted || fi->file_type < 0 || fi->file_type > 2) {
-            FATAL("file %s invald deleted=%d type=%d\n",
-                  fn, fi->deleted, fi->file_type);
+        if (fi->file_type < 0 || fi->file_type > 2) {
+            FATAL("file %s invald type=%d\n", fn, fi->file_type);
         }
     }
 
@@ -428,7 +427,7 @@ int cache_file_create(complex_t ctr, int zoom, double zoom_fraction, int wavelen
     fi->zoom_fraction = zoom_fraction;
     fi->wavelen_start = wavelen_start;
     fi->wavelen_scale = wavelen_scale;
-    fi->deleted       = false;
+    fi->selected      = false;
     memcpy(fi->dir_pixels, dir_pixels, sizeof(fi->dir_pixels));
 
     // create the file
@@ -451,20 +450,18 @@ int cache_file_create(complex_t ctr, int zoom, double zoom_fraction, int wavelen
 
 void cache_file_delete(int idx)
 {
-    cache_file_info_t *fi = IDX_TO_FI(idx);
-
-    // This routine will remove (unlink) the file and set the file_info[idx].deleted
-    // flag. A subsequent call to cache_file_garbage_collect will remove the 
-    // deleted entries from the file_info array.
-
-    // if already marked deleted just return
-    if (fi->deleted) {
-        return;
+    if (idx < 0 || idx >= max_file_info) {
+        FATAL("invalid idx=%d, max_file_info=%d\n", idx, max_file_info);
     }
 
-    // unlink the file, and set the deleted flag
-    unlink(PATHNAME(fi->file_name));
-    fi->deleted = true;
+    // unlink the file
+    unlink(PATHNAME(file_info[idx]->file_name));
+
+    // remove file_info[idx] from file_info array
+    free(file_info[idx]);
+    memmove(&file_info[idx], &file_info[idx+1], (max_file_info-idx-1)*sizeof(void*));
+    max_file_info--;
+    file_info[max_file_info] = NULL;
 }
 
 void cache_file_read(int idx)
@@ -632,28 +629,6 @@ void cache_file_update(int idx, int file_type)
 
     // close
     CLOSE(fi->file_name, fd);
-}
-
-void cache_file_garbage_collect(void)
-{
-    int idx = 0;
-
-    // This routine will remove file_info array entries that have been marked 'deleted'.
-
-    while (idx < max_file_info) {
-        if (file_info[idx]->deleted) {
-            DEBUG("idx %d  max_file_info %d  %p %p %p\n",
-                  idx, max_file_info, 
-                  file_info[0], file_info[1], file_info[2]);
-            DEBUG("  freeing %p\n", file_info[idx]);
-            free(file_info[idx]);
-            memmove(&file_info[idx], &file_info[idx+1], (max_file_info-1)*sizeof(void*));
-            max_file_info--;
-            file_info[max_file_info] = NULL;
-        } else {
-            idx++;
-        }
-    }
 }
 
 // -----------------  ADJUST MBSVAL CENTER  -------------------------------------------

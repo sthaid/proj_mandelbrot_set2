@@ -59,7 +59,7 @@ typedef struct {
     double        zoom_fraction;
     int           wavelen_start;
     int           wavelen_scale;
-    bool          deleted;
+    bool          selected;
     int           reserved[10];
     unsigned int  dir_pixels[DIR_PIXELS_HEIGHT][DIR_PIXELS_WIDTH];
 } cache_file_info_t;
@@ -92,6 +92,5 @@ int cache_file_create(complex_t ctr, int zoom, double zoom_fraction, int wavelen
 void cache_file_update(int idx, int file_type);
 void cache_file_delete(int idx);
 void cache_file_read(int idx);
-void cache_file_garbage_collect(void);
 
 #endif
