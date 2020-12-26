@@ -21,6 +21,7 @@
 #include <fcntl.h>
 #include <dirent.h>
 #include <zlib.h>
+#include <inttypes.h>
 
 #define DEBUG_PRINT_ENABLED (debug_enabled)  // xxx don't like this
 #include <util_misc.h>
@@ -38,8 +39,8 @@
 #define MBSVAL_IN_SET        1000
 #define MBSVAL_NOT_COMPUTED  65535
 
-#define CACHE_WIDTH          2000
-#define CACHE_HEIGHT         2000
+#define CACHE_WIDTH          1200
+#define CACHE_HEIGHT         800
 
 #define DIR_PIXELS_WIDTH     300
 #define DIR_PIXELS_HEIGHT    200
@@ -80,11 +81,11 @@ int                 max_file_info;
 int mandelbrot_set(complex_t c);
 
 void cache_init(double pixel_size_at_zoom0);
-void cache_param_change(complex_t ctr, int zoom, int win_width, int win_height, bool force);
-void cache_get_mbsval(unsigned short *mbsval, int width, int height);
+void cache_param_change(complex_t ctr, int zoom, bool force);
+void cache_get_mbsval(unsigned short *mbsval);
 void cache_status(int *phase_inprog, int *zoom_lvl_inprog);
 
-bool cache_thread_first_phase1_zoom_lvl_is_finished(void);
+bool cache_thread_first_zoom_lvl_is_finished(void);
 bool cache_thread_all_is_finished(void);
 
 int cache_file_create(complex_t ctr, int zoom, double zoom_fraction, int wavelen_start, int wavelen_scale,
