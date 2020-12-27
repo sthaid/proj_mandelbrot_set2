@@ -20,6 +20,8 @@
 
 // -----------------  LOGGING  -----------------------------------
 
+extern bool debug_enabled;
+
 #define INFO(fmt, args...) \
     do { \
         logmsg("INFO", __func__, fmt, ## args); \
@@ -32,16 +34,12 @@
     do { \
         logmsg("ERROR", __func__, fmt, ## args); \
     } while (0)
-#ifdef DEBUG_PRINT_ENABLED
 #define DEBUG(fmt, args...) \
     do { \
-        if (DEBUG_PRINT_ENABLED) { \
+        if (debug_enabled) { \
             logmsg("DEBUG", __func__, fmt, ## args); \
         } \
     } while (0)
-#else
-#define DEBUG(fmt, args...)
-#endif
 
 #define FATAL(fmt, args...) \
     do { \

@@ -163,6 +163,9 @@ int32_t sdl_init(int32_t *w, int32_t *h, bool fullscreen, bool resizeable, bool 
 #ifndef ANDROID
     #define SDL_FLAGS ((resizeable ? SDL_WINDOW_RESIZABLE : 0) | \
                        (fullscreen ? SDL_WINDOW_FULLSCREEN_DESKTOP : 0))
+    if (fullscreen) {
+        *w = *h = 0;
+    }
     if (SDL_CreateWindowAndRenderer(*w, *h, SDL_FLAGS, &sdl_window, &sdl_renderer) != 0) {
         ERROR("SDL_CreateWindowAndRenderer failed\n");
         return -1;

@@ -34,6 +34,8 @@
 
 // -----------------  LOGMSG  --------------------------------------------
 
+bool debug_enabled;
+
 #ifndef ANDROID
 void logmsg(char *lvl, const char *func, char *fmt, ...) 
 {

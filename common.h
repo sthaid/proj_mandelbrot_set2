@@ -23,7 +23,6 @@
 #include <zlib.h>
 #include <inttypes.h>
 
-#define DEBUG_PRINT_ENABLED (debug_enabled)  // xxx don't like this
 #include <util_misc.h>
 
 // xxx also in util
@@ -40,7 +39,7 @@
 #define MBSVAL_NOT_COMPUTED  65535
 
 #define CACHE_WIDTH          1200
-#define CACHE_HEIGHT         800
+#define CACHE_HEIGHT         700
 
 #define DIR_PIXELS_WIDTH     300
 #define DIR_PIXELS_HEIGHT    200

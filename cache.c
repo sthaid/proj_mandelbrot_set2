@@ -178,8 +178,13 @@ void cache_param_change(complex_t ctr, int zoom, bool force)
 
 void cache_get_mbsval(unsigned short *mbsval)
 {
+    int i;
     cache_t *cp = &cache[cache_zoom];
-    memcpy(mbsval, cp->mbsval, MBSVAL_BYTES);
+
+    for (i = CACHE_HEIGHT-1; i >= 0; i--) {
+        memcpy(mbsval, &(*cp->mbsval)[i][0], CACHE_WIDTH * 2);
+        mbsval += CACHE_WIDTH;
+    }
 }
 
 // -----------------  STATUS  ---------------------------------------------------------
@@ -232,7 +237,7 @@ static void cache_file_init(void)
     qsort(file_num_array, max_file, sizeof(int), compare);
 
     // make available max_file_info and last_file_num
-    last_file_num = (max_file > 0 ? file_num_array[max_file-1] : 0);
+    last_file_num = (max_file > 0 ? file_num_array[max_file-1] : -1);
     max_file_info = max_file;
 
     // read each file's header, which is a cache_file_info_t, and
