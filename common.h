@@ -52,8 +52,9 @@ typedef double complex complex_t;
 
 typedef struct {
     uint64_t      magic;
-    char          file_name[300];
+    char          file_name[100];
     int           file_type;
+    int           file_size;
     complex_t     ctr;
     int           zoom;
     double        zoom_fraction;
@@ -82,10 +83,9 @@ int mandelbrot_set(complex_t c);
 void cache_init(double pixel_size_at_zoom0);
 void cache_param_change(complex_t ctr, int zoom, bool force);
 void cache_get_mbsval(unsigned short *mbsval);
-void cache_status(int *phase_inprog, int *zoom_lvl_inprog);
 
 bool cache_thread_first_zoom_lvl_is_finished(void);
-bool cache_thread_all_is_finished(void);
+int cache_thread_percent_complete(void);
 
 int cache_file_create(complex_t ctr, int zoom, double zoom_fraction, int wavelen_start, int wavelen_scale,
                       unsigned int *dir_pixels);

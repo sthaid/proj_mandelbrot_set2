@@ -8,7 +8,7 @@
 #define CACHE_THREAD_REQUEST_RUN    1
 #define CACHE_THREAD_REQUEST_STOP   2
 
-#define MAGIC_MBS_FILE              0x5555555500000002
+#define MAGIC_MBS_FILE              0x5555555500000202
 #define MAGIC_FFCE                  0x11223344
 
 #define CTR_INVALID                 (999 + 0 * I)
@@ -43,6 +43,22 @@
     do { \
         if (close(fd) != 0) { \
             FATAL("failed to close %s, %s\n", fn, strerror(errno)); \
+        } \
+    } while (0)
+#define STAT(fn,fd,size) \
+    do { \
+        int rc; \
+        struct stat statbuf; \
+        if ((rc = fstat(fd, &statbuf)) != 0) { \
+            FATAL("failed to stat %s, %s\n", fn, strerror(errno)); \
+        } \
+        (size) = statbuf.st_size; \
+    } while (0)
+#define LSEEK(fn,fd,offset) \
+    do { \
+        int rc; \
+        if ((rc = lseek(fd, offset, SEEK_SET)) != offset) { \
+            FATAL("failed to lseek %s, %s rc=%d\n", fn, strerror(errno), rc); \
         } \
     } while (0)
 
@@ -100,10 +116,7 @@ static cache_t   cache[MAX_ZOOM];
 static spiral_t  cache_initial_spiral;
 static int       cache_thread_request;
 static bool      cache_thread_first_zoom_lvl_finished;
-static bool      cache_thread_all_finished;
-
-static int       cache_status_phase_inprog;
-static int       cache_status_zoom_lvl_inprog;
+static int       cache_thread_percent_done;
 
 static char      cache_dir[200];
 
@@ -181,18 +194,19 @@ void cache_get_mbsval(unsigned short *mbsval)
     int i;
     cache_t *cp = &cache[cache_zoom];
 
+    if ((fabs(creal(cp->ctr) - creal(cache_ctr)) > 1.1 * cp->pixel_size) ||
+        (fabs(cimag(cp->ctr) - cimag(cache_ctr)) > 1.1 * cp->pixel_size))
+    {
+        FATAL("cache_zoom=%d cp->ctr=%lg+%lgI cache_ctr=%lg+%lgI\n",
+              cache_zoom,
+              creal(cp->ctr), cimag(cp->ctr),
+              creal(cache_ctr), cimag(cache_ctr));
+    }
+
     for (i = CACHE_HEIGHT-1; i >= 0; i--) {
         memcpy(mbsval, &(*cp->mbsval)[i][0], CACHE_WIDTH * 2);
         mbsval += CACHE_WIDTH;
     }
-}
-
-// -----------------  STATUS  ---------------------------------------------------------
-
-void cache_status(int *phase_inprog, int *zoom_lvl_inprog)
-{
-    *phase_inprog     = cache_status_phase_inprog;
-    *zoom_lvl_inprog  = cache_status_zoom_lvl_inprog;
 }
 
 // -----------------  FILE SUPPORT  ---------------------------------------------------
@@ -242,6 +256,7 @@ static void cache_file_init(void)
 
     // read each file's header, which is a cache_file_info_t, and
     // store it in the global file_info array
+    // xxx should this be tolerant of bad files?
     for (idx = 0; idx < max_file_info; idx++) {
         char fn[100];
         cache_file_info_t *fi;
@@ -376,6 +391,7 @@ int cache_file_create(complex_t ctr, int zoom, double zoom_fraction, int wavelen
     fi->magic         = MAGIC_MBS_FILE;
     strcpy(fi->file_name, file_name);
     fi->file_type     = 0;
+    fi->file_size     = sizeof(cache_file_info_t);    
     fi->ctr           = ctr;
     fi->zoom          = zoom;
     fi->zoom_fraction = zoom_fraction;
@@ -582,6 +598,12 @@ void cache_file_update(int idx, int file_type)
     // free compressed_mbsval_data
     free(compressed_mbsval_data);
 
+    // update the file hdr's file_size field
+    STAT(fi->file_name, fd, fi->file_size);
+    LSEEK(fi->file_name, fd, offsetof(cache_file_info_t,file_size));
+    WRITE(fi->file_name, fd, &fi->file_size, sizeof(fi->file_size));
+    INFO("XXX updated SIZE to %d\n", fi->file_size);
+
     // close
     CLOSE(fi->file_name, fd);
 }
@@ -655,9 +677,9 @@ bool cache_thread_first_zoom_lvl_is_finished(void)
     return cache_thread_first_zoom_lvl_finished;
 }
 
-bool cache_thread_all_is_finished(void)
+int cache_thread_percent_complete(void)
 {
-    return cache_thread_all_finished;
+    return cache_thread_percent_done;
 }
 
 static void *cache_thread(void *cx)
@@ -701,10 +723,6 @@ static void *cache_thread(void *cx)
 
     while (true) {
 restart:
-        // now in idle phase
-        cache_status_phase_inprog     = 0;
-        cache_status_zoom_lvl_inprog  = -1;
-
         // debug print the completion status
         if (start_us != 0) {
             INFO("%s  mbs_calc_count=%d,%d  duration=%ld ms\n",
@@ -753,15 +771,15 @@ restart:
         // this code section will compute mbs values, for the zoom levels in zoom_lvl_tbl, and
         // extending to the window size dimensions.
         DEBUG("STARTING\n");
-        cache_status_phase_inprog = 1;
         for (n = 0; n < MAX_ZOOM; n++) {
             CHECK_FOR_STOP_REQUEST;
 
-            // publish cache_status_zoom_lvl_inprog, which is used by the
-            // cache_status routine; thus the need for __sync_synchronize
-            cache_status_zoom_lvl_inprog  = zoom_lvl_tbl[n];
-            __sync_synchronize();
-            DEBUG("- inprog : %d - %d\n", cache_status_phase_inprog, cache_status_zoom_lvl_inprog);
+            // xxx comment
+            if (n == 1) {
+                cache_thread_first_zoom_lvl_finished = true;
+                __sync_synchronize();
+                DEBUG("FINISHED lvl0\n");
+            }
 
             // since it is likely the cache thread has been requested to run becuae
             // the cache center has changed, we need to first call cache_adjust_mbsval_ct
@@ -770,7 +788,9 @@ restart:
             //
             // note that the cache_adjust_mbsval_ctr routine will reset the 
             // spirals if an adjustment was made
-            cp = &cache[cache_status_zoom_lvl_inprog];
+            DEBUG("starting: idx=%d lvl=%d\n", n, zoom_lvl_tbl[n]);
+            cache_thread_percent_done = 100 * n / MAX_ZOOM;
+            cp = &cache[ zoom_lvl_tbl[n] ];
             cache_adjust_mbsval_ctr(cp);
 
             // if spiral is done (meaning that the cache thread has computed 
@@ -798,16 +818,10 @@ restart:
 
                 COMPUTE_MBSVAL(idx_a,idx_b,cp);
             }
-
-            if (n == 0) {
-                cache_thread_first_zoom_lvl_finished = true;
-                __sync_synchronize();
-                DEBUG("FINISHD lvl0\n");
-            }
         }
 
         // caching of all zoom levels has completed
-        cache_thread_all_finished = true;
+        cache_thread_percent_done = 100;
         __sync_synchronize();
         DEBUG("ALL FINISHED \n");
     }
@@ -859,7 +873,7 @@ static void cache_thread_issue_request(int req)
 {
     // reset cache thread progress status flags
     cache_thread_first_zoom_lvl_finished = false;
-    cache_thread_all_finished = false;
+    cache_thread_percent_done = 0;
 
     // set the cache_thread_request; the cache_thread is polling on this variable
     __sync_synchronize();

@@ -1,3 +1,4 @@
+// xxx move the ctrls out of corners by one space
 #include <common.h>
 
 #include <util_sdl.h>
@@ -12,7 +13,7 @@
 
 #define INITIAL_FULL_SCREEN       false
 #define INITIAL_WIN_WIDTH         1700
-#define INITIAL_WIN_HEIGHT        850 
+#define INITIAL_WIN_HEIGHT        900 
 
 #if 0  // xxx temp
 #define INITIAL_CTR               (-0.75 + 0.0*I)
@@ -34,16 +35,17 @@
 #define WAVELEN_LAST              700
 
 // xxx make bigger on android
+// xxx consolidate small and large
 #ifndef ANDROID
-#define FONTSZ       80
+#define FONTSZ       90
 #define FONTSZ_HELP  40
 #define FONTSZ_INFO  50
-#define FONTSZ_ALERT 80
+#define FONTSZ_ALERT 90
 #else
-#define FONTSZ       80  // 60
+#define FONTSZ       90  // 60
 #define FONTSZ_HELP  40  // 30
 #define FONTSZ_INFO  50  // 30
-#define FONTSZ_ALERT 80  // 60
+#define FONTSZ_ALERT 90  // 60
 #endif
 
 #define SLIDE_SHOW_INTVL_US  5000000
@@ -59,6 +61,7 @@
 //
 
 static bool full_screen;
+static int  fcw, fch;
 
 //
 // prototypes
@@ -72,9 +75,9 @@ static void render_hndlr_mbs(pane_cx_t *pane_cx);
 static int event_hndlr_mbs(pane_cx_t *pane_cx, sdl_event_t *event);
 static void zoom_step(bool dir_is_incr);
 static void init_color_lut(int wavelen_start, int wavelen_scale, unsigned int *color_lut);
-static void display_info_proc(rect_t *pane, uint64_t update_intvl_ms);
+static void display_info_proc(rect_t *pane);
 static void create_file(char *params);
-static int save_file(void);
+static int save_file(int file_type);
 static void show_file(int idx);
 
 static void render_hndlr_help(pane_cx_t *pane_cx);
@@ -129,6 +132,11 @@ int main(int argc, char **argv)
         FATAL("sdl_init %dx%d failed\n", win_width, win_height);
     }
     INFO("actual win_width=%d win_height=%d\n", win_width, win_height);
+
+    // xxx 
+    fcw = sdl_font_char_width(FONTSZ);
+    fch = sdl_font_char_height(FONTSZ);
+    INFO("fcw=%d fch=%d\n", fcw, fch);
 
     // run the pane manger;
     // the sdl_pane_manager is the runtime loop, and it will repeatedly call the pane_hndlr,
@@ -319,30 +327,27 @@ static unsigned int color_lut[65536];
 static void render_hndlr_mbs(pane_cx_t *pane_cx)
 {
     int      idx = 0, pixel_x, pixel_y;
-    uint64_t time_now_us = microsec_timer();
-    uint64_t update_intvl_ms;
     rect_t  *pane = &pane_cx->pane;
 
     static texture_t       texture;
     static unsigned int   *pixels;
     static unsigned short *mbsval;
-    static uint64_t        last_update_time_us;
     static unsigned int    last_display_select_count;
 
-    // XXX organize the order
-    #define SDL_EVENT_MBS_CTRLS             (SDL_EVENT_USER_DEFINED + 0)
-    #define SDL_EVENT_MBS_SHOW_NEXT_FILE    (SDL_EVENT_USER_DEFINED + 1)
-    #define SDL_EVENT_MBS_SHOW_PRIOR_FILE   (SDL_EVENT_USER_DEFINED + 2)
-    #define SDL_EVENT_MBS_HELP              (SDL_EVENT_USER_DEFINED + 3)
-    #define SDL_EVENT_MBS_INFO              (SDL_EVENT_USER_DEFINED + 4)
-    #define SDL_EVENT_MBS_FILES             (SDL_EVENT_USER_DEFINED + 5)
-    #define SDL_EVENT_MBS_ZOOM_AUTO         (SDL_EVENT_USER_DEFINED + 6)
-    #define SDL_EVENT_MBS_ZOOM_IN           (SDL_EVENT_USER_DEFINED + 7)
-    #define SDL_EVENT_MBS_ZOOM_OUT          (SDL_EVENT_USER_DEFINED + 8)
-    #define SDL_EVENT_MBS_PAN               (SDL_EVENT_USER_DEFINED + 9)
-    #define SDL_EVENT_MBS_MOUSE_WHEEL_ZOOM  (SDL_EVENT_USER_DEFINED + 10)
-    #define SDL_EVENT_MBS_SLIDE_SHOW        (SDL_EVENT_USER_DEFINED + 11)
-    #define SDL_EVENT_MBS_SAVE              (SDL_EVENT_USER_DEFINED + 12)
+    #define SDL_EVENT_MBS_INFO              (SDL_EVENT_USER_DEFINED + 0)
+    #define SDL_EVENT_MBS_CTRLS             (SDL_EVENT_USER_DEFINED + 2)
+    #define SDL_EVENT_MBS_SLIDE_SHOW        (SDL_EVENT_USER_DEFINED + 3)
+    #define SDL_EVENT_MBS_HELP              (SDL_EVENT_USER_DEFINED + 4)
+    #define SDL_EVENT_MBS_SHOW_PRIOR_FILE   (SDL_EVENT_USER_DEFINED + 5)
+    #define SDL_EVENT_MBS_SHOW_NEXT_FILE    (SDL_EVENT_USER_DEFINED + 6)
+    #define SDL_EVENT_MBS_SAVE              (SDL_EVENT_USER_DEFINED + 7)
+    #define SDL_EVENT_MBS_SAVE_ZM           (SDL_EVENT_USER_DEFINED + 8)
+    #define SDL_EVENT_MBS_ZOOM_OUT          (SDL_EVENT_USER_DEFINED + 9)
+    #define SDL_EVENT_MBS_ZOOM_AUTO         (SDL_EVENT_USER_DEFINED + 10)
+    #define SDL_EVENT_MBS_ZOOM_IN           (SDL_EVENT_USER_DEFINED + 11)
+    #define SDL_EVENT_MBS_FILES             (SDL_EVENT_USER_DEFINED + 12)
+    #define SDL_EVENT_MBS_PAN               (SDL_EVENT_USER_DEFINED + 13)
+    #define SDL_EVENT_MBS_MOUSE_WHEEL_ZOOM  (SDL_EVENT_USER_DEFINED + 14)
 
     // if re-entering mbs display then reset/init stuff
     if (display_select_count != last_display_select_count) {
@@ -351,15 +356,7 @@ static void render_hndlr_mbs(pane_cx_t *pane_cx)
         last_display_select_count = display_select_count;
     }
 
-    // determine the display update interval, 
-    // which may be displayed in the info area at top left
-    // XXX is this used
-    update_intvl_ms = (last_update_time_us != 0
-                       ? (time_now_us - last_update_time_us) / 1000
-                       : 0);
-    last_update_time_us = time_now_us;
-
-    // XXX comment
+    // on first call, allocate texture, pixels and mbsval
     if (pixels == NULL) {
         texture = sdl_create_texture(CACHE_WIDTH,CACHE_HEIGHT);
         pixels = malloc(CACHE_WIDTH*CACHE_HEIGHT*BYTES_PER_PIXEL);
@@ -378,16 +375,17 @@ static void render_hndlr_mbs(pane_cx_t *pane_cx)
         }
     }
 
-    // inform mandelbrot set cache of the current ctr and zoom
-    // xxx comments
-    // xxx disable pan/zoom when slide show is enabled, and when ctrls are disabled
-    // XXX review this
+    // determine what area of the mandelbrot set will be displayed;
+    // (note that show_file eventually also calls cache_param_change)
+    // - on first call file idx 0 will be displayed
+    // - if slide_show_enabled then the files are displayed for SLIDE_SHOW_INTVL_US
+    // - otherwise the current ctr/zoom is used
     static bool first_call = true;
     if (first_call && max_file_info > 0) {
         show_file(0);
-    } else if (slide_show_enabled) {
+    } else if (slide_show_enabled && max_file_info > 0) {
         if (microsec_timer() > slide_show_time_us + SLIDE_SHOW_INTVL_US) {
-            slide_show_idx = (slide_show_idx + 1) % max_file_info;  // xxxx must be > 0
+            slide_show_idx = (slide_show_idx + 1) % max_file_info;
             show_file(slide_show_idx);
             slide_show_time_us = microsec_timer();
         }
@@ -425,7 +423,7 @@ static void render_hndlr_mbs(pane_cx_t *pane_cx)
 
     // display info in upper left corner
     if (display_info) {
-        display_info_proc(pane, update_intvl_ms);
+        display_info_proc(pane);
     }
 
 #if 0
@@ -440,86 +438,90 @@ static void render_hndlr_mbs(pane_cx_t *pane_cx)
 #endif
 
     // register for events
-    // XXX cleanup this section, and note which are for linux only
-
-    sdl_register_event(pane, pane, SDL_EVENT_MBS_PAN, SDL_EVENT_TYPE_MOUSE_MOTION, pane_cx);
-    sdl_register_event(pane, pane, SDL_EVENT_MBS_MOUSE_WHEEL_ZOOM, SDL_EVENT_TYPE_MOUSE_WHEEL, pane_cx);
-
-    int fcw = sdl_font_char_width(FONTSZ);
-    int fch = sdl_font_char_height(FONTSZ);
-    rect_t loc;
-
-    loc = (rect_t){pane->w/2-5*fcw/2, 0, 5*fcw, fch};
-    if (ctrls_enabled) {
-        sdl_render_text_and_register_event(
-                pane, loc.x, loc.y, FONTSZ, "CTRLS", SDL_LIGHT_BLUE, SDL_BLACK,
-                SDL_EVENT_MBS_CTRLS, SDL_EVENT_TYPE_MOUSE_CLICK, pane_cx);
-    } else {
-        loc = (rect_t){pane->w/2-20*fcw/2, 0, 20*fcw, 2*fch};
-        sdl_register_event(pane, &loc, SDL_EVENT_MBS_CTRLS, SDL_EVENT_TYPE_MOUSE_CLICK, pane_cx);
+    if (!slide_show_enabled) {
+        sdl_register_event(pane, pane, SDL_EVENT_MBS_PAN, SDL_EVENT_TYPE_MOUSE_MOTION, pane_cx);
+        sdl_register_event(pane, pane, SDL_EVENT_MBS_MOUSE_WHEEL_ZOOM, SDL_EVENT_TYPE_MOUSE_WHEEL, pane_cx);
     }
 
     if (ctrls_enabled) {
-        static int first=1;
-        if (first) {
-            first = 0;
-            INFO("fcw/h = %d %d\n", fcw, fch);
-        }
+        int x, y;
 
-        loc = (rect_t){pane->w-4*fcw, 0, 4*fcw, fch};
+        x = pane->w/2-5*fcw/2;
+        y = 0;
         sdl_render_text_and_register_event(
-                pane, loc.x, loc.y, FONTSZ, "HELP", SDL_LIGHT_BLUE, SDL_BLACK,
+                pane, x, y, FONTSZ, "CTRLS", SDL_LIGHT_BLUE, SDL_BLACK,
+                SDL_EVENT_MBS_CTRLS, SDL_EVENT_TYPE_MOUSE_CLICK, pane_cx);
+
+        x = pane->w-5*fcw;
+        y = 0;
+        sdl_render_text_and_register_event(
+                pane, x, y, FONTSZ, "HELP ", SDL_LIGHT_BLUE, SDL_BLACK,
                 SDL_EVENT_MBS_HELP, SDL_EVENT_TYPE_MOUSE_CLICK, pane_cx);
 
-        loc = (rect_t){0, 0, 4*fcw, fch};
+        x = 0;
+        y = 0;
         sdl_render_text_and_register_event(
-                pane, loc.x, loc.y, FONTSZ, "INFO", SDL_LIGHT_BLUE, SDL_BLACK,
+                pane, x, y, FONTSZ, " INFO", SDL_LIGHT_BLUE, SDL_BLACK,
                 SDL_EVENT_MBS_INFO, SDL_EVENT_TYPE_MOUSE_CLICK, pane_cx);
 
-        loc = (rect_t){0, pane->h/2-fch/2, 3*fcw, fch};
+        x = 0;
+        y = pane->h/2-fch/2;
         sdl_render_text_and_register_event(
-                pane, loc.x, loc.y, FONTSZ, " < ", SDL_LIGHT_BLUE, SDL_BLACK,
+                pane, x, y, FONTSZ, " < ", SDL_LIGHT_BLUE, SDL_BLACK,
                 SDL_EVENT_MBS_SHOW_PRIOR_FILE, SDL_EVENT_TYPE_MOUSE_CLICK, pane_cx);
 
-        loc = (rect_t){pane->w-3*fcw, pane->h/2-fch/2, 3*fcw, fch};
+        x = pane->w-3*fcw;
+        y = pane->h/2-fch/2;
         sdl_render_text_and_register_event(
-                pane, loc.x, loc.y, FONTSZ, " > ", SDL_LIGHT_BLUE, SDL_BLACK,
+                pane, x, y, FONTSZ, " > ", SDL_LIGHT_BLUE, SDL_BLACK,
                 SDL_EVENT_MBS_SHOW_NEXT_FILE, SDL_EVENT_TYPE_MOUSE_CLICK, pane_cx);
 
-        loc = (rect_t){pane->w-5*fcw, pane->h-fch, 5*fcw, fch};
+        x = pane->w-6*fcw;
+        y = pane->h-fch;
         sdl_render_text_and_register_event(
-                pane, loc.x, loc.y, FONTSZ, "FILES", SDL_LIGHT_BLUE, SDL_BLACK,
+                pane, x, y, FONTSZ, "FILES ", SDL_LIGHT_BLUE, SDL_BLACK,
                 SDL_EVENT_MBS_FILES, SDL_EVENT_TYPE_MOUSE_CLICK, pane_cx);
 
-        loc = (rect_t){pane->w/2-7*fcw/2, pane->h-fch, 7*fcw, fch};
+        x = pane->w/2-4*fcw/2;
+        y = pane->h-fch;
         sdl_render_text_and_register_event(
-                pane, loc.x, loc.y, FONTSZ, "ZM_AUTO", SDL_LIGHT_BLUE, SDL_BLACK,
+                pane, x, y, FONTSZ, "ZOOM", SDL_LIGHT_BLUE, SDL_BLACK,
                 SDL_EVENT_MBS_ZOOM_AUTO, SDL_EVENT_TYPE_MOUSE_CLICK, pane_cx);
 
-        loc = (rect_t){pane->w*.25-6*fcw/2, pane->h-fch, 6*fcw, fch};
+        x = pane->w*.25-3*fcw/2;
+        y = pane->h-fch;
         sdl_render_text_and_register_event(
-                pane, loc.x, loc.y, FONTSZ, "ZM_OUT", SDL_LIGHT_BLUE, SDL_BLACK,
+                pane, x, y, FONTSZ, "OUT", SDL_LIGHT_BLUE, SDL_BLACK,
                 SDL_EVENT_MBS_ZOOM_OUT, SDL_EVENT_TYPE_MOUSE_CLICK, pane_cx);
 
-        // xxx simplify this code loc.x, loc.y
-        loc = (rect_t){pane->w*.75-5*fcw/2, pane->h-fch, 5*fcw, fch};
+        x = pane->w*.75-2*fcw/2;
+        y = pane->h-fch;
         sdl_render_text_and_register_event(
-                pane, loc.x, loc.y, FONTSZ, "ZM_IN", SDL_LIGHT_BLUE, SDL_BLACK,
+                pane, x, y, FONTSZ, "IN", SDL_LIGHT_BLUE, SDL_BLACK,
                 SDL_EVENT_MBS_ZOOM_IN, SDL_EVENT_TYPE_MOUSE_CLICK, pane_cx);
 
-        loc = (rect_t){pane->w*.75-4*fcw/2, 0, 4*fcw, fch};
+        x = pane->w*.75-4*fcw/2;
+        y = 0;
         sdl_render_text_and_register_event(
-                pane, loc.x, loc.y, FONTSZ, "SHOW", SDL_LIGHT_BLUE, SDL_BLACK,
+                pane, x, y, FONTSZ, "SHOW", SDL_LIGHT_BLUE, SDL_BLACK,
                 SDL_EVENT_MBS_SLIDE_SHOW, SDL_EVENT_TYPE_MOUSE_CLICK, pane_cx);
 
-        // XXX retry
-        if (true || cache_thread_first_zoom_lvl_is_finished()) {  // xxx this didn't work ?
-            int x,y;
-            x = 0; y = pane->h-fch;
+        if (cache_thread_percent_complete() == 100) {
+            x = 0; 
+            y = pane->h-fch;
             sdl_render_text_and_register_event(
-                    pane, x, y, FONTSZ, "SAVE", SDL_LIGHT_BLUE, SDL_BLACK,
+                    pane, x, y, FONTSZ, " SVZM", SDL_LIGHT_BLUE, SDL_BLACK,
+                    SDL_EVENT_MBS_SAVE_ZM, SDL_EVENT_TYPE_MOUSE_CLICK, pane_cx);
+        } else if (cache_thread_first_zoom_lvl_is_finished()) {
+            x = 0; 
+            y = pane->h-fch;
+            sdl_render_text_and_register_event(
+                    pane, x, y, FONTSZ, " SAVE", SDL_LIGHT_BLUE, SDL_BLACK,
                     SDL_EVENT_MBS_SAVE, SDL_EVENT_TYPE_MOUSE_CLICK, pane_cx);
         }
+    } else {
+        rect_t loc = (rect_t){pane->w/2-20*fcw/2, 0, 20*fcw, 2*fch};
+        sdl_register_event(pane, &loc, SDL_EVENT_MBS_CTRLS, SDL_EVENT_TYPE_MOUSE_CLICK, pane_cx);
     }
 }
 
@@ -611,7 +613,7 @@ static int event_hndlr_mbs(pane_cx_t *pane_cx, sdl_event_t *event)
     case SDL_EVENT_MBS_PAN: {
         double pixel_size = PIXEL_SIZE_AT_ZOOM0 * pow(2,-ZOOM_TOTAL);
         ctr += -(event->mouse_motion.delta_x * pixel_size) +
-               +(event->mouse_motion.delta_y * pixel_size) * I;
+               -(event->mouse_motion.delta_y * pixel_size) * I;
         break; }
 
     case SDL_EVENT_MBS_SLIDE_SHOW:
@@ -623,7 +625,10 @@ static int event_hndlr_mbs(pane_cx_t *pane_cx, sdl_event_t *event)
 
     // --- xxx  ---
     case SDL_EVENT_MBS_SAVE:
-        save_file();
+        save_file(1);
+        break;
+    case SDL_EVENT_MBS_SAVE_ZM:
+        save_file(2);
         break;
 
     // --- DEBUG EVENTS ---  xxx mark linux only
@@ -769,7 +774,7 @@ static void init_color_lut(int wavelen_start, int wavelen_scale, unsigned int *c
     }
 }
 
-static void display_info_proc(rect_t *pane, uint64_t update_intvl_ms)
+static void display_info_proc(rect_t *pane)
 {
     char line[20][50];
     int  line_len[20];
@@ -778,11 +783,12 @@ static void display_info_proc(rect_t *pane, uint64_t update_intvl_ms)
     // xxx make this smaller
 
     // print info to line[] array xxx reformat
-    sprintf(line[n++], "Window: %d %d", pane->w, pane->h);
-    sprintf(line[n++], "Ctr-A:  %+0.9f", creal(ctr));
-    sprintf(line[n++], "Ctr-B:  %+0.9f", cimag(ctr));
-    sprintf(line[n++], "Zoom:   %0.2f", ZOOM_TOTAL);
-    sprintf(line[n++], "Color:  %d %d", wavelen_start, wavelen_scale);   
+    //sprintf(line[n++], "WinSz: %d %d", pane->w, pane->h);
+    sprintf(line[n++], "Ctr-A: %+0.9f", creal(ctr));
+    sprintf(line[n++], "Ctr-B: %+0.9f", cimag(ctr));
+    sprintf(line[n++], "Zoom:  %0.2f", ZOOM_TOTAL);
+    sprintf(line[n++], "CLUT:  %d %d", wavelen_start, wavelen_scale);   
+    sprintf(line[n++], "Cache: %d%%", cache_thread_percent_complete());
 
     // determine each line_len and the max_len
     for (i = 0; i < n; i++) {
@@ -805,30 +811,41 @@ static void display_info_proc(rect_t *pane, uint64_t update_intvl_ms)
 static void create_file(char *params)
 {
     double ctr_a, ctr_b;
-    int cnt, idx;
+    int cnt, idx, file_type;
 
-    cnt = sscanf(params, "%lf,%lf,%d,%lf,%d,%d",
-                 &ctr_a, &ctr_b, &zoom, &zoom_fraction, &wavelen_start, &wavelen_scale);
-    if (cnt != 6) {
+    cnt = sscanf(params, "%lf,%lf,%d,%lf,%d,%d,%d",
+                 &ctr_a, &ctr_b, &zoom, &zoom_fraction, &wavelen_start, &wavelen_scale, &file_type);
+    if (cnt != 7) {
         FATAL("invalid params '%s'\n", params);
     }
+    if (file_type != 1 && file_type != 2) {
+        FATAL("invalid file_type %d\n", file_type);
+    }
+    INFO("ctr_a,b=%f %f zoom=%d zoom_fraction=%f wavelen_start,scale=%d %d file_type=%d\n",
+         ctr_a, ctr_b, zoom, zoom_fraction, wavelen_start, wavelen_scale, file_type);
+
+    INFO("- start caching mandelbrot set\n");
     ctr = ctr_a + ctr_b * I;
     init_color_lut(wavelen_start, wavelen_scale, color_lut);
-
-    INFO("ctr_a,b=%f %f zoom=%d zoom_fraction=%f wavelen_start,scale=%d %d\n",
-         ctr_a, ctr_b, zoom, zoom_fraction, wavelen_start, wavelen_scale);
-
-    INFO("- waiting for cache thread\n");
     cache_param_change(ctr, zoom, false);
-    while (cache_thread_first_zoom_lvl_is_finished() == false) {
+
+    INFO("- waiting for caching to complete ...\n");
+
+    while (true) {
+        if (file_type == 1 && cache_thread_first_zoom_lvl_is_finished()) {
+            break;
+        } else if (file_type == 2 && cache_thread_percent_complete() == 100) {
+            break;
+        }
         usleep(100000);
     }
 
-    idx = save_file();
-    INFO("- saved file %d\n", idx);
+    INFO("- writing file\n");
+    idx = save_file(file_type);
+    INFO("- done, idx=%d\n", idx);
 }
 
-static int save_file(void)
+static int save_file(int file_type)
 {
     int             x_idx, y_idx, pxidx, w, h, idx;
     unsigned int   *pixels;
@@ -843,7 +860,7 @@ static int save_file(void)
     y_step = (double)h / DIR_PIXELS_HEIGHT;
     x_step = (double)w / DIR_PIXELS_WIDTH;
     pxidx = 0;
-    INFO("w,h %d %d x_start,y_start %f %f\n", w, h, x_start, y_start);
+    DEBUG("w,h %d %d x_start,y_start %f %f\n", w, h, x_start, y_start);
 
     // alloc memory for mbs values and pixels
     mbsval = malloc(CACHE_WIDTH * CACHE_HEIGHT * 2);
@@ -875,10 +892,10 @@ static int save_file(void)
     free(pixels);
 
     // xxx comment
-    cache_file_update(idx, 1);
+    cache_file_update(idx, file_type);
 
     // set completion alert
-    set_alert(SDL_GREEN, "SAVE COMPLETE");
+    set_alert(SDL_GREEN, file_type == 1 ? "SAVE COMPLETE" : "SAVE-ZOOM COMPLETE");
 
     // return idx
     return idx;
@@ -911,7 +928,7 @@ static int max_help_row;
 static void render_hndlr_help(pane_cx_t *pane_cx)
 {
     char strbuff[100], *s;
-    int row, y;
+    int row, x, y;
     rect_t * pane = &pane_cx->pane;
 
     static asset_file_t *f;
@@ -919,7 +936,8 @@ static void render_hndlr_help(pane_cx_t *pane_cx)
 
     #define SDL_EVENT_HELP_MOUSE_MOTION  (SDL_EVENT_USER_DEFINED + 0)
     #define SDL_EVENT_HELP_MOUSE_WHEEL   (SDL_EVENT_USER_DEFINED + 1)
-    #define SDL_EVENT_HELP_BACK    (SDL_EVENT_USER_DEFINED + 2)
+    #define SDL_EVENT_HELP_BACK          (SDL_EVENT_USER_DEFINED + 2)
+    #define SDL_EVENT_HELP_QUIT          (SDL_EVENT_USER_DEFINED + 3)
 
     // read help.txt, on first call
     if (f == NULL) {
@@ -956,42 +974,65 @@ static void render_hndlr_help(pane_cx_t *pane_cx)
     sdl_register_event(pane, pane, SDL_EVENT_HELP_MOUSE_MOTION, SDL_EVENT_TYPE_MOUSE_MOTION, pane_cx);
     sdl_register_event(pane, pane, SDL_EVENT_HELP_MOUSE_WHEEL, SDL_EVENT_TYPE_MOUSE_WHEEL, pane_cx);
 
-    int fcw = sdl_font_char_width(FONTSZ);  // XXX one define
-    int fch = sdl_font_char_height(FONTSZ);
-    rect_t loc = (rect_t){pane->w-4*fcw, pane->h-fch, 4*fcw, fch};
+    x = pane->w-5*fcw;
+    y = pane->h-fch;
     sdl_render_text_and_register_event(
-            pane, loc.x, loc.y, FONTSZ, "BACK", SDL_LIGHT_BLUE, SDL_BLACK,
+            pane, x, y, FONTSZ, "BACK ", SDL_LIGHT_BLUE, SDL_BLACK,
             SDL_EVENT_HELP_BACK, SDL_EVENT_TYPE_MOUSE_CLICK, pane_cx);
+
+    x = pane->w-5*fcw;
+    y = 0;
+    sdl_render_text_and_register_event(
+            pane, x, y, FONTSZ, "QUIT ", SDL_LIGHT_BLUE, SDL_BLACK,
+            SDL_EVENT_HELP_QUIT, SDL_EVENT_TYPE_MOUSE_CLICK, pane_cx);
 }
 
 static int event_hndlr_help(pane_cx_t *pane_cx, sdl_event_t *event)
 {
     int rc = PANE_HANDLER_RET_NO_ACTION;
 
-//XXX add arrow keys
-// xxx comment linux only events
     // handle events to adjust the help text scroll position (y_top_help)
     switch (event->event_id) {
-    case SDL_EVENT_HELP_MOUSE_MOTION: {
-        int y_top_help_limit = (-max_help_row+10) * ROW2Y(1,FONTSZ_HELP);
+    case SDL_EVENT_HELP_MOUSE_MOTION:
         y_top_help += event->mouse_motion.delta_y;
-        if (y_top_help < y_top_help_limit) y_top_help = y_top_help_limit;
-        if (y_top_help > 0) y_top_help = 0;
-        break; }
-    case SDL_EVENT_HELP_MOUSE_WHEEL: {
-        int y_top_help_limit = (-max_help_row+10) * ROW2Y(1,FONTSZ_HELP);
+        break;
+    case SDL_EVENT_HELP_MOUSE_WHEEL:
         if (event->mouse_wheel.delta_y > 0) {
-            y_top_help += FONTSZ_HELP;
+            y_top_help += 20;
         } else if (event->mouse_wheel.delta_y < 0) {
-            y_top_help -= FONTSZ_HELP;
+            y_top_help -= 20;
         }
-        if (y_top_help < y_top_help_limit) y_top_help = y_top_help_limit;
-        if (y_top_help > 0) y_top_help = 0;
-        break; }
+        break;
+    case SDL_EVENT_KEY_PGUP:
+        y_top_help += 600;
+        break;
+    case SDL_EVENT_KEY_PGDN:
+        y_top_help -= 600;
+        break;
+    case SDL_EVENT_KEY_UP_ARROW:
+        y_top_help += 20;
+        break;
+    case SDL_EVENT_KEY_DOWN_ARROW:
+        y_top_help -= 20;
+        break;
+    case SDL_EVENT_KEY_HOME:
+        y_top_help = 0;
+        break;
+    case SDL_EVENT_KEY_END:
+        y_top_help = -999999999;
+        break;
     case SDL_EVENT_HELP_BACK:
         SET_DISPLAY(DISPLAY_MBS);
         break;
+    case SDL_EVENT_HELP_QUIT:
+        rc = PANE_HANDLER_RET_PANE_TERMINATE;
+        break;
     }
+
+    // xxx
+    int y_top_help_limit = (-max_help_row+10) * ROW2Y(1,FONTSZ_HELP);
+    if (y_top_help < y_top_help_limit) y_top_help = y_top_help_limit;
+    if (y_top_help > 0) y_top_help = 0;
 
     return rc;
 }
@@ -1014,8 +1055,9 @@ static void render_hndlr_directory(pane_cx_t *pane_cx)
 {
     rect_t * pane = &pane_cx->pane;
     int      cols = (pane->w/DIR_PIXELS_WIDTH == 0 ? 1 : pane->w/DIR_PIXELS_WIDTH);
-    int      idx, x, y, select_cnt;
+    int      idx, x, y, select_cnt, total_file_size;
     rect_t   loc;
+    char     str[100];
 
     static texture_t texture;
     static int       last_display_select_count;
@@ -1046,11 +1088,13 @@ static void render_hndlr_directory(pane_cx_t *pane_cx)
     sdl_register_event(pane, pane, SDL_EVENT_DIR_MOUSE_WHEEL_SCROLL, SDL_EVENT_TYPE_MOUSE_WHEEL, pane_cx);
 
     // display the directory images, for each image:
+    // xxx comments
     // - the saved place image is first displayed, followed by
     // - red select box at upper left (if selected)
     // - file number
     // - zoom factor
     // - file_type
+    total_file_size = 0;
     for (idx = 0; idx < max_file_info; idx++) {
         cache_file_info_t *fi = file_info[idx];
 
@@ -1067,20 +1111,27 @@ static void render_hndlr_directory(pane_cx_t *pane_cx)
         sdl_update_texture(texture, (void*)fi->dir_pixels, DIR_PIXELS_WIDTH*BYTES_PER_PIXEL);
         sdl_render_texture(pane, x, y, texture);
 
+        // if this file is file_type 2 (containing full zoom cache) then
+        // display letter 'ZM' in upper right
+        if (fi->file_type == 2) {
+            sdl_render_printf(pane, x+DIR_PIXELS_WIDTH-2*fcw, y, FONTSZ, SDL_WHITE, SDL_BLACK, "ZM");
+        }
+
         // register for events for each directory image that is displayed
-        rect_t loc = {x,y,DIR_PIXELS_WIDTH,DIR_PIXELS_HEIGHT};
+        loc = (rect_t){x,y,DIR_PIXELS_WIDTH,DIR_PIXELS_HEIGHT};
         sdl_register_event(pane, &loc, SDL_EVENT_DIR_CHOICE + idx, SDL_EVENT_TYPE_MOUSE_CLICK, pane_cx);
         if (!fi->selected) {
             sdl_render_text_and_register_event(
                 pane, loc.x, loc.y, FONTSZ, "SEL", SDL_LIGHT_BLUE, SDL_BLACK,
                 SDL_EVENT_DIR_SELECT+idx, SDL_EVENT_TYPE_MOUSE_CLICK, pane_cx);
         } else {
-            int fcw = sdl_font_char_width(FONTSZ);
-            int fch = sdl_font_char_height(FONTSZ);
             loc = (rect_t){x,y,3*fcw,fch};
             sdl_render_fill_rect(pane, &loc, SDL_RED);
             sdl_register_event(pane, &loc, SDL_EVENT_DIR_SELECT+idx, SDL_EVENT_TYPE_MOUSE_CLICK, pane_cx);
         }
+
+        // sum the total_file_size
+        total_file_size += fi->file_size;
     }
 
     // separate the directory images with black lines
@@ -1104,29 +1155,35 @@ static void render_hndlr_directory(pane_cx_t *pane_cx)
     }
 
     // clear bottom of screen where the DELETE and BACK event text is to be displayed
-    int fcw = sdl_font_char_width(FONTSZ);  // xxx one define
-    int fch = sdl_font_char_height(FONTSZ);
     loc = (rect_t){0, pane->h-(int)(1.5*fch), pane->w, (int)(1.5*fch)};
     sdl_render_fill_rect(pane, &loc, SDL_BLACK);
 
     // xxx also clear events from this region
 
-    // register for additional events
 
-    loc = (rect_t){pane->w-4*fcw, pane->h-fch, 4*fcw, fch};
+    // print total_file_size
+    sprintf(str, "%dM", (int)nearbyint((double)total_file_size/(1024*1024)));
+    x = pane->w/2 - fcw*strlen(str)/2;
+    y = pane->h - fch;
+    sdl_render_printf(pane, x, y, FONTSZ, SDL_WHITE, SDL_BLACK, "%s", str);
+
+    // register for additional events
+    x = pane->w-4*fcw;
+    y = pane->h-fch;
     sdl_render_text_and_register_event(
-            pane, loc.x, loc.y, FONTSZ, "BACK", SDL_LIGHT_BLUE, SDL_BLACK,
+            pane, x, y, FONTSZ, "BACK", SDL_LIGHT_BLUE, SDL_BLACK,
             SDL_EVENT_DIR_BACK, SDL_EVENT_TYPE_MOUSE_CLICK, pane_cx);
 
     for (select_cnt=0, idx=0; idx < max_file_info; idx++) {
         if (file_info[idx]->selected) select_cnt++;
     }
-    if (select_cnt > 0 && select_cnt < max_file_info ) {
-        loc = (rect_t){0, pane->h-fch, 6*fcw, fch};
-        char str[100];
-        sprintf(str, "DELETE %d FILE%s", select_cnt, select_cnt>1?"S":"");
+    if (select_cnt > 0) {
+        x = 0;
+        y = pane->h-fch;
+        //sprintf(str, "DELETE %d FILE%s", select_cnt, select_cnt>1?"S":"");
+        sprintf(str, "DELETE-%d", select_cnt);
         sdl_render_text_and_register_event(
-                pane, loc.x, loc.y, FONTSZ, str, SDL_LIGHT_BLUE, SDL_BLACK,
+                pane, x, y, FONTSZ, str, SDL_LIGHT_BLUE, SDL_BLACK,
                 SDL_EVENT_DIR_DELETE, SDL_EVENT_TYPE_MOUSE_CLICK, pane_cx);
     }
 }
