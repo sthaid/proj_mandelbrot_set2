@@ -725,11 +725,11 @@ static void *cache_thread(void *cx)
 restart:
         // debug print the completion status
         if (start_us != 0) {
-            INFO("%s  mbs_calc_count=%d,%d  duration=%ld ms\n",
+            INFO("%s  mbs_calc_count=%d,%d  duration=%.3f secs\n",
                  !was_stopped ? "DONE" : "STOPPED",
                  mbs_calc_count,
                  mbs_not_calc_count,
-                 (microsec_timer() - start_us) / 1000);
+                 (microsec_timer() - start_us) / 1000000.);
             start_us = 0;
         }
 

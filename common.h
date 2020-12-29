@@ -41,8 +41,8 @@
 #define CACHE_WIDTH          1200
 #define CACHE_HEIGHT         700
 
-#define DIR_PIXELS_WIDTH     300
-#define DIR_PIXELS_HEIGHT    200
+#define DIR_PIXELS_WIDTH     500
+#define DIR_PIXELS_HEIGHT    300
 
 //
 // typedefs
