@@ -990,7 +990,7 @@ static int  y_top_dir;
 static void render_hndlr_directory(pane_cx_t *pane_cx)
 {
     rect_t * pane = &pane_cx->pane;
-    int      idx, x, y, select_cnt, total_file_size, cols;
+    int      i, idx, x, y, select_cnt, total_file_size, cols, rows;
     rect_t   loc;
     char     str[100];
 
@@ -1014,6 +1014,13 @@ static void render_hndlr_directory(pane_cx_t *pane_cx)
     // some space on the right for mouse-motion scroll
     cols = (pane->w - 100) / DIR_PIXELS_WIDTH;
     if (cols <= 0) cols = 1;
+
+    // determine number of rows
+    if (max_file_info > 0) {
+        rows = (max_file_info - 1) / cols + 1;
+    } else {
+        rows = 0;
+    }
 
     // initialize, when this display has been selected, or
     // when the init_request flag has been set (init_request is set when files are deleted)
@@ -1072,25 +1079,30 @@ static void render_hndlr_directory(pane_cx_t *pane_cx)
         }
     }
 
-    // separate the directory images with black lines
-    // XXX try green - needs cleanup
-    int i;
-    for (i = 1; i < cols; i++) {
-        x = i * DIR_PIXELS_WIDTH;
-        sdl_render_line(pane, x-2, 0, x-2, pane->h-1, SDL_GREEN);
-        sdl_render_line(pane, x-1, 0, x-1, pane->h-1, SDL_GREEN);
-        sdl_render_line(pane, x+0, 0, x+0, pane->h-1, SDL_GREEN);
-        sdl_render_line(pane, x+1, 0, x+1, pane->h-1, SDL_GREEN);
-    }
-    for (i = 1; i <= max_file_info-1; i++) {
-        y = (i / cols) * DIR_PIXELS_HEIGHT + y_top_dir;
-        if (y+1 < 0 || y-2 > pane->h-1) {
-            continue;
+    // separate the directory images with green lines
+    if (rows > 0) {
+        // vertical lines
+        for (i = 0; i <= cols; i++) {
+            x = i * DIR_PIXELS_WIDTH;
+            int y_end = rows * DIR_PIXELS_HEIGHT + y_top_dir;
+            if (y_end >= pane->h) y_end = pane->h-1;
+            sdl_render_line(pane, x-2, 0, x-2, y_end, SDL_GREEN);
+            sdl_render_line(pane, x-1, 0, x-1, y_end, SDL_GREEN);
+            sdl_render_line(pane, x+0, 0, x+0, y_end, SDL_GREEN);
+            sdl_render_line(pane, x+1, 0, x+1, y_end, SDL_GREEN);
         }
-        sdl_render_line(pane, 0, y-2, pane->w-1, y-2, SDL_GREEN);
-        sdl_render_line(pane, 0, y-1, pane->w-1, y-1, SDL_GREEN);
-        sdl_render_line(pane, 0, y+0, pane->w-1, y+0, SDL_GREEN);
-        sdl_render_line(pane, 0, y+1, pane->w-1, y+1, SDL_GREEN);
+        // horizontal lines
+        for (i = 0; i <= rows; i++) {
+            y = i * DIR_PIXELS_HEIGHT + y_top_dir;
+            if (y+1 < 0 || y-2 > pane->h-1) {
+                continue;
+            }
+            int x_end = cols * DIR_PIXELS_WIDTH;
+            sdl_render_line(pane, 0, y-2, x_end, y-2, SDL_GREEN);
+            sdl_render_line(pane, 0, y-1, x_end, y-1, SDL_GREEN);
+            sdl_render_line(pane, 0, y+0, x_end, y+0, SDL_GREEN);
+            sdl_render_line(pane, 0, y+1, x_end, y+1, SDL_GREEN);
+        }
     }
 
     // clear bottom of screen where the DELETE and BACK event text is to be displayed, and
