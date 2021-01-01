@@ -137,7 +137,7 @@ static void cache_spiral_get_next(spiral_t *s, int *x, int *y);
 
 // -----------------  INITIALIZATION  -------------------------------------------------
 
-void cache_init(double pixel_size_at_zoom0)
+void cache_init(void)
 {
     pthread_t id;
     int       z;
@@ -152,7 +152,7 @@ void cache_init(double pixel_size_at_zoom0)
         memset(cp->mbsval, 0xff, MBSVAL_BYTES);
         cp->ctr         = CTR_INVALID;
         cp->zoom        = z;
-        cp->pixel_size  = pixel_size_at_zoom0 * pow(2,-z);
+        cp->pixel_size  = PIXEL_SIZE_AT_ZOOM0 * pow(2,-z);
         cp->spiral      = cache_initial_spiral;
         cp->spiral_done = true;
     }

@@ -33,6 +33,8 @@
 // defines
 //
 
+#define PIXEL_SIZE_AT_ZOOM0 (4. / 1000.)
+
 #define MAX_ZOOM             47
 
 #define MBSVAL_IN_SET        1000
@@ -80,7 +82,7 @@ int                 max_file_info;
 
 int mandelbrot_set(complex_t c);
 
-void cache_init(double pixel_size_at_zoom0);
+void cache_init(void);
 void cache_param_change(complex_t ctr, int zoom, bool force);
 void cache_get_mbsval(unsigned short *mbsval);
 

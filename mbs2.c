@@ -1,12 +1,16 @@
 // xxx
-// - review all event case stmts for Linux version
-// - don't allow deleting the last file
-// - indicate which is selected, maybe dark blue
-//           OR put a box around it
+// - don't allow deleting the last file ?
 // - fix QUIT, and rename PGM_EXIT, and move it somewhere else
-// - in FILES put box around each when drawing
 // - add startup alert or first time hidden alert about how to enable ctrls
 // - test useability on phone
+// - whay a delay here
+//     01/01/21 08:08:30.121 INFO cache_file_copy_assets_to_internal_storage: asset files have ...
+//     01/01/21 08:08:32.294 INFO sdl_init: sdl_win_width=1700 sdl_win_height=900
+// - display alert when saving a file,  and other times too
+// - add initial ctr to the first of files0
+// - startup default in show mode
+// - fixup help text
+// - ensure some of the key cmds are only allowed when in that mode
 
 #include <common.h>
 
@@ -24,23 +28,15 @@
 #define INITIAL_WIN_WIDTH         1700
 #define INITIAL_WIN_HEIGHT        900 
 
-#if 0
-#define INITIAL_CTR               (-0.155117074119472870 + -1.027629953839807042*I)
-#define INITIAL_ZOOM              12
-#define INITIAL_ZOOM_FRACTION     0.7
-#define INITIAL_WAVELEN_START     400
-#define INITIAL_WAVELEN_SCALE     2
-#else
-// xxx add this to files
 #define INITIAL_CTR               (-0.75 + 0.0*I)
-#define INITIAL_ZOOM              0  // xxx dont need zoom and fraction
-#define INITIAL_ZOOM_FRACTION     0
+#define INITIAL_ZOOM              0.0
 #define INITIAL_WAVELEN_START     425
 #define INITIAL_WAVELEN_SCALE     8
-#endif
 
-#define ZOOM_STEP                 .1   // must be a submultiple of 1
+#define ZOOM_STEP                 0.1  // should be a submultiple of 1
+#define ZOOM_BIG_STEP             1.0  // should be >= 1
 
+#define MAX_WAVELEN_SCALE         40
 #define WAVELEN_FIRST             400
 #define WAVELEN_LAST              700
 
@@ -53,9 +49,6 @@
 #endif
 
 #define SLIDE_SHOW_INTVL_US  5000000
-
-//#define PIXEL_SIZE_AT_ZOOM0 (6. / 1000.)  // xxx global define
-#define PIXEL_SIZE_AT_ZOOM0 (4. / 1000.)  // xxx global define
 
 //
 // typedefs
@@ -78,8 +71,8 @@ static void display_alert(rect_t *pane);
 
 static void render_hndlr_mbs(pane_cx_t *pane_cx);
 static int event_hndlr_mbs(pane_cx_t *pane_cx, sdl_event_t *event);
-static void zoom_step(bool dir_is_incr);
-static void init_color_lut(int wavelen_start, int wavelen_scale, unsigned int *color_lut);
+static void zoom_step(double step_size);
+static void init_color_lut(void);
 static void display_info_proc(rect_t *pane);
 static void create_file(char *params);
 static int save_file(int file_type);
@@ -124,7 +117,7 @@ int main(int argc, char **argv)
     }
 
     // initialize the caching code
-    cache_init(PIXEL_SIZE_AT_ZOOM0);
+    cache_init();
 
     // create the file specified by the '-c' option, and exit
     if (create_file_param[0] != '\0') {
@@ -239,12 +232,13 @@ static int pane_hndlr(pane_cx_t * pane_cx, int request, void * init_params, sdl_
 
         // first handle events common to all displays
         switch (event->event_id) {
-        case 'f':  // full screen
+        case 'f':   // Linux version
+            // toggle full screen
             full_screen = !full_screen;
-            INFO("set full_screen to %d\n", full_screen);
             sdl_full_screen(full_screen);
             break;
-        case 'q':  // quit
+        case 'q':   // Linux version
+            // program terminate
             rc = PANE_HANDLER_RET_PANE_TERMINATE;
             break;
         case SDL_EVENT_KEY_F(1):   // Linux version
@@ -319,7 +313,7 @@ static void display_alert(rect_t *pane)
 
 static complex_t    ctr                          = INITIAL_CTR;
 static int          zoom                         = INITIAL_ZOOM;
-static double       zoom_fraction                = INITIAL_ZOOM_FRACTION;
+static double       zoom_fraction                = INITIAL_ZOOM - (int)INITIAL_ZOOM;
 static int          wavelen_start                = INITIAL_WAVELEN_START;
 static int          wavelen_scale                = INITIAL_WAVELEN_SCALE;
 static unsigned int color_lut[65536];
@@ -390,7 +384,7 @@ static void render_hndlr_mbs(pane_cx_t *pane_cx)
         // init color lut; 
         // this would normally be done by the above call to show_file, except
         //  when max_file_info is zero
-        init_color_lut(wavelen_start, wavelen_scale, color_lut); // xxx shouldnt have args
+        init_color_lut();
     }
 
     // if re-entering mbs display then 
@@ -403,7 +397,7 @@ static void render_hndlr_mbs(pane_cx_t *pane_cx)
     // when zoom limit is reached then reverse auto zoom direction
     if (mode == MODE_AUTOZ) {
         if (!auto_zoom_pause) {
-            zoom_step(auto_zoom_in);
+            zoom_step(auto_zoom_in ? ZOOM_STEP : -ZOOM_STEP);
             if (ZOOM_TOTAL == 0) {
                 auto_zoom_in = true;
             } else if (ZOOM_TOTAL == (MAX_ZOOM-1)) {
@@ -634,7 +628,8 @@ static void render_hndlr_mbs(pane_cx_t *pane_cx)
         x = pane->w*.50-5*fcw/2;
         y = pane->h-fch;
         sdl_render_text_and_register_event(
-                pane, x, y, FONTSZ_LARGE, "PAUSE", SDL_LIGHT_BLUE, SDL_BLACK,
+                pane, x, y, FONTSZ_LARGE, "PAUSE", 
+                auto_zoom_pause ? SDL_BLUE : SDL_LIGHT_BLUE, SDL_BLACK,
                 SDL_EVENT_MBS_PAUSE, SDL_EVENT_TYPE_MOUSE_CLICK, pane_cx);
 
         // print the current zoom level, and auto zoom direction
@@ -700,16 +695,16 @@ static int event_hndlr_mbs(pane_cx_t *pane_cx, sdl_event_t *event)
 
     // --- MODE_NORMAL: ZOOM ---
     case SDL_EVENT_MBS_ZIN:
-        zoom_step(true); // xxx increase by larger increment
+        zoom_step(ZOOM_BIG_STEP);
         break;
     case SDL_EVENT_MBS_ZOUT:
-        zoom_step(false); // xxx increase by larger increment
+        zoom_step(-ZOOM_BIG_STEP);
         break;
     case SDL_EVENT_MBS_MOUSE_WHEEL_ZOOM:   // Linux version
         if (event->mouse_wheel.delta_y > 0) {
-            zoom_step(true);
+            zoom_step(ZOOM_STEP);
         } else if (event->mouse_wheel.delta_y < 0) {
-            zoom_step(false);
+            zoom_step(-ZOOM_STEP);
         }
         break;
 
@@ -735,9 +730,28 @@ static int event_hndlr_mbs(pane_cx_t *pane_cx, sdl_event_t *event)
         show_file(idx);
         break; }
 
-    // --- MODE_NORMAL: DEBUG ---
-    case SDL_EVENT_KEY_F(2):   // Linux Version
+    // --- MODE_NORMAL: MISC - LINUX VERSION ONLY ---
+    case SDL_EVENT_KEY_F(2):
         debug_force_cache_thread_run = true;
+        break;
+    case 'r':  
+        // reset to initial params
+        ctr           = INITIAL_CTR;
+        zoom          = INITIAL_ZOOM;
+        zoom_fraction = INITIAL_ZOOM - (int)INITIAL_ZOOM;
+        wavelen_start = INITIAL_WAVELEN_START;
+        wavelen_scale = INITIAL_WAVELEN_SCALE;
+        init_color_lut();
+        break;
+    case 'z':  
+        // goto either fully zoomed in or out
+        if (ZOOM_TOTAL == (MAX_ZOOM-1)) {
+            zoom = 0;
+            zoom_fraction = 0;
+        } else {
+            zoom = (MAX_ZOOM-1);
+            zoom_fraction = 0;
+        }
         break;
 
     // --- MODE_AUTOZ ---
@@ -750,62 +764,37 @@ static int event_hndlr_mbs(pane_cx_t *pane_cx, sdl_event_t *event)
 
     // --- MODE_CLUT ---
     case SDL_EVENT_MBS_WVLEN_START: 
-    case SDL_EVENT_KEY_LEFT_ARROW: 
-    case SDL_EVENT_KEY_RIGHT_ARROW: {
+    case SDL_EVENT_KEY_LEFT_ARROW:     // Linux version
+    case SDL_EVENT_KEY_RIGHT_ARROW: {  // Linux version
         int delta = (event->event_id == SDL_EVENT_MBS_WVLEN_START ? -event->mouse_motion.delta_x :
                      event->event_id == SDL_EVENT_KEY_LEFT_ARROW ? -1 : +1);
         wavelen_start += delta;
         if (wavelen_start < WAVELEN_FIRST) wavelen_start = WAVELEN_LAST;
         if (wavelen_start > WAVELEN_LAST) wavelen_start = WAVELEN_FIRST;
-        init_color_lut(wavelen_start, wavelen_scale, color_lut);
+        init_color_lut();
         break; }
     case SDL_EVENT_MBS_WVLEN_SCALE_MINUS:
     case SDL_EVENT_MBS_WVLEN_SCALE_PLUS:
-    case SDL_EVENT_KEY_UP_ARROW: 
-    case SDL_EVENT_KEY_DOWN_ARROW: {
+    case SDL_EVENT_KEY_UP_ARROW:      // Linux version
+    case SDL_EVENT_KEY_DOWN_ARROW: {  // Linux version
         int delta = ((event->event_id == SDL_EVENT_MBS_WVLEN_SCALE_MINUS ||
                       event->event_id == SDL_EVENT_KEY_DOWN_ARROW) ? -1 : +1);
         wavelen_scale += delta;
-        if (wavelen_scale < 0) wavelen_scale = 20;  // xxx why 8 and not a define
-        if (wavelen_scale > 20) wavelen_scale = 0;
-        init_color_lut(wavelen_start, wavelen_scale, color_lut);
+        if (wavelen_scale < 0) wavelen_scale = MAX_WAVELEN_SCALE;
+        if (wavelen_scale > MAX_WAVELEN_SCALE) wavelen_scale = 0;
+        init_color_lut();
         break; }
 
     // xxx
-    // - add clut ctrls
-    // - add click to ctr, if possible
-    // - add pinch zoom
-    // - add 'z'
-    // - review below
+    // - add click to ctr, if possible    PROBABY NOT
+    // - add pinch zoom, maybe            MAYBE
+    // - review below, and add these too
 #if 0
     // --- GENERAL ---
-    case 'r':  // reset ctr and zoom
-        ctr           = INITIAL_CTR;
-        zoom          = 0;
-        zoom_fraction = 0.0;
-        break;
     case 'R':  // reset color lookup table
         wavelen_start = WAVELEN_START_DEFAULT;
         wavelen_scale = WAVELEN_SCALE_DEFAULT;
-        init_color_lut(wavelen_start, wavelen_scale, color_lut);
-        break;
-
-    // --- DEBUG ---
-
-    // --- COLOR CONTROLS ---
-    case SDL_EVENT_KEY_UP_ARROW: case SDL_EVENT_KEY_DOWN_ARROW:
-        wavelen_scale = wavelen_scale +
-                              (event->event_id == SDL_EVENT_KEY_UP_ARROW ? 1 : -1);
-        if (wavelen_scale < 0) wavelen_scale = 0;
-        if (wavelen_scale > 16) wavelen_scale = 16;
-        init_color_lut(wavelen_start, wavelen_scale, color_lut);
-        break;
-    case SDL_EVENT_KEY_LEFT_ARROW: case SDL_EVENT_KEY_RIGHT_ARROW:
-        wavelen_start = wavelen_start +
-                              (event->event_id == SDL_EVENT_KEY_RIGHT_ARROW ? 1 : -1);
-        if (wavelen_start < WAVELEN_FIRST) wavelen_start = WAVELEN_LAST;
-        if (wavelen_start > WAVELEN_LAST) wavelen_start = WAVELEN_FIRST;
-        init_color_lut(wavelen_start, wavelen_scale, color_lut);
+        init_color_lut();
         break;
 
     // --- CENTER ---
@@ -816,27 +805,21 @@ static int event_hndlr_mbs(pane_cx_t *pane_cx, sdl_event_t *event)
         break; }
 
     // --- ZOOM ---
-    case 'z':  // goto either fully zoomed in or out
-        if (ZOOM_TOTAL == (MAX_ZOOM-1)) {
-            zoom = 0;
-            zoom_fraction = 0;
-        } else {
-            zoom = (MAX_ZOOM-1);
-            zoom_fraction = 0;
-        }
-        break;
 #endif
     }
 
     return rc;
 }
 
-static void zoom_step(bool dir_is_incr)
+static void zoom_step(double step_size)
 {
     double z = ZOOM_TOTAL;
 
-    z += (dir_is_incr ? ZOOM_STEP : -ZOOM_STEP);
-    if (fabs(z - nearbyint(z)) < 1e-6) {
+    z += step_size;
+
+    if ((fabs(step_size) >= 1) ||
+        (fabs(z - nearbyint(z)) < 1e-6)) 
+    {
         z = nearbyint(z);
     }
 
@@ -851,7 +834,7 @@ static void zoom_step(bool dir_is_incr)
     INFO("z=%f zoom=%d  frac=%f\n", z, zoom, zoom_fraction);
 }
 
-static void init_color_lut(int wavelen_start, int wavelen_scale, unsigned int *color_lut)
+static void init_color_lut(void)
 {
     int           i;
     unsigned char r,g,b;
@@ -907,7 +890,7 @@ static void display_info_proc(rect_t *pane)
     }
 
     // render the lines
-    for (i = 0; i < n; i++) {//xxx vvv
+    for (i = 0; i < n; i++) {//xxx vvv, why 1.2
         sdl_render_printf(
             pane, 0, 1.2*fch+ROW2Y(i,FONTSZ_SMALL), 
             FONTSZ_SMALL,  SDL_WHITE, SDL_BLACK, "%s", line[i]);
@@ -932,7 +915,7 @@ static void create_file(char *params)
 
     INFO("- start caching mandelbrot set\n");
     ctr = ctr_a + ctr_b * I;
-    init_color_lut(wavelen_start, wavelen_scale, color_lut);
+    init_color_lut();
     cache_param_change(ctr, zoom, false);
 
     INFO("- waiting for caching to complete ...\n");
@@ -1024,7 +1007,7 @@ static void show_file(int idx)
     wavelen_start = file_info[idx]->wavelen_start;
     wavelen_scale = file_info[idx]->wavelen_scale;
 
-    init_color_lut(wavelen_start, wavelen_scale, color_lut);
+    init_color_lut();
 }
 
 // - - - - - - - - -  PANE_HNDLR : HELP  - - - - - - - - - - - - - - - -
@@ -1103,29 +1086,29 @@ static int event_hndlr_help(pane_cx_t *pane_cx, sdl_event_t *event)
     case SDL_EVENT_HELP_MOUSE_MOTION:
         y_top_help += event->mouse_motion.delta_y;
         break;
-    case SDL_EVENT_HELP_MOUSE_WHEEL:
+    case SDL_EVENT_HELP_MOUSE_WHEEL:  // Linux version
         if (event->mouse_wheel.delta_y > 0) {
             y_top_help += 20;
         } else if (event->mouse_wheel.delta_y < 0) {
             y_top_help -= 20;
         }
         break;
-    case SDL_EVENT_KEY_PGUP:
+    case SDL_EVENT_KEY_PGUP:  // Linux version
         y_top_help += 600;
         break;
-    case SDL_EVENT_KEY_PGDN:
+    case SDL_EVENT_KEY_PGDN:  // Linux version
         y_top_help -= 600;
         break;
-    case SDL_EVENT_KEY_UP_ARROW:
+    case SDL_EVENT_KEY_UP_ARROW:  // Linux version
         y_top_help += 20;
         break;
-    case SDL_EVENT_KEY_DOWN_ARROW:
+    case SDL_EVENT_KEY_DOWN_ARROW:   // Linux version
         y_top_help -= 20;
         break;
-    case SDL_EVENT_KEY_HOME:
+    case SDL_EVENT_KEY_HOME:  // Linux version
         y_top_help = 0;
         break;
-    case SDL_EVENT_KEY_END:
+    case SDL_EVENT_KEY_END:  // Linux version
         y_top_help = -999999999;
         break;
     case SDL_EVENT_HELP_BACK:
@@ -1145,7 +1128,6 @@ static int event_hndlr_help(pane_cx_t *pane_cx, sdl_event_t *event)
 }
 
 // - - - - - - - - -  PANE_HNDLR : DIRECTORY  - - - - - - - - - - - - -
-// xxx for safety don't delete the last file ???
 
 static bool init_request;
 static int  y_top_dir;
@@ -1161,7 +1143,7 @@ static int  y_top_dir;
 static void render_hndlr_directory(pane_cx_t *pane_cx)
 {
     rect_t * pane = &pane_cx->pane;
-    int      i, idx, x, y, select_cnt, total_file_size, cols, rows;
+    int      idx, x, y, select_cnt, total_file_size, cols;
     rect_t   loc;
     char     str[100];
 
@@ -1185,13 +1167,6 @@ static void render_hndlr_directory(pane_cx_t *pane_cx)
     // some space on the right for mouse-motion scroll
     cols = (pane->w - 100) / DIR_PIXELS_WIDTH;
     if (cols <= 0) cols = 1;
-
-    // determine number of rows
-    if (max_file_info > 0) {
-        rows = (max_file_info - 1) / cols + 1;
-    } else {
-        rows = 0;
-    }
 
     // initialize, when this display has been selected, or
     // when the init_request flag has been set (init_request is set when files are deleted)
@@ -1226,7 +1201,7 @@ static void render_hndlr_directory(pane_cx_t *pane_cx)
         // if this file is file_type 2 (containing full zoom cache) then
         // display letter 'Z' in upper right
         if (fi->file_type == 2) {
-            sdl_render_printf(pane, x+DIR_PIXELS_WIDTH-1*fcw, y, FONTSZ_LARGE, SDL_WHITE, SDL_BLACK, "Z");
+            sdl_render_printf(pane, x+DIR_PIXELS_WIDTH-2-1*fcw, y, FONTSZ_LARGE, SDL_WHITE, SDL_BLACK, "Z");
         }
 
         // register SDL_EVENT_DIR_CHOICE event
@@ -1241,39 +1216,17 @@ static void render_hndlr_directory(pane_cx_t *pane_cx)
         // endif
         if (!fi->selected) {
             sdl_render_text_and_register_event(
-                pane, loc.x, loc.y, FONTSZ_LARGE, "SEL", SDL_LIGHT_BLUE, SDL_BLACK,
+                pane, x+2, y, FONTSZ_LARGE, "SEL", SDL_LIGHT_BLUE, SDL_BLACK,
                 SDL_EVENT_DIR_SELECT+idx, SDL_EVENT_TYPE_MOUSE_CLICK, pane_cx);
         } else {
-            loc = (rect_t){x,y,3*fcw,fch};
+            loc = (rect_t){x+2,y,3*fcw,fch};
             sdl_render_fill_rect(pane, &loc, SDL_RED);
             sdl_register_event(pane, &loc, SDL_EVENT_DIR_SELECT+idx, SDL_EVENT_TYPE_MOUSE_CLICK, pane_cx);
         }
-    }
 
-    // separate the directory images with green lines
-    if (rows > 0) {
-        // vertical lines
-        for (i = 0; i <= cols; i++) {
-            x = i * DIR_PIXELS_WIDTH;
-            int y_end = rows * DIR_PIXELS_HEIGHT + y_top_dir;
-            if (y_end >= pane->h) y_end = pane->h-1;
-            sdl_render_line(pane, x-2, 0, x-2, y_end, SDL_GREEN);
-            sdl_render_line(pane, x-1, 0, x-1, y_end, SDL_GREEN);
-            sdl_render_line(pane, x+0, 0, x+0, y_end, SDL_GREEN);
-            sdl_render_line(pane, x+1, 0, x+1, y_end, SDL_GREEN);
-        }
-        // horizontal lines
-        for (i = 0; i <= rows; i++) {
-            y = i * DIR_PIXELS_HEIGHT + y_top_dir;
-            if (y+1 < 0 || y-2 > pane->h-1) {
-                continue;
-            }
-            int x_end = cols * DIR_PIXELS_WIDTH;
-            sdl_render_line(pane, 0, y-2, x_end, y-2, SDL_GREEN);
-            sdl_render_line(pane, 0, y-1, x_end, y-1, SDL_GREEN);
-            sdl_render_line(pane, 0, y+0, x_end, y+0, SDL_GREEN);
-            sdl_render_line(pane, 0, y+1, x_end, y+1, SDL_GREEN);
-        }
+        // display green border around image
+        loc = (rect_t){x-2, y-2, DIR_PIXELS_WIDTH+4, DIR_PIXELS_HEIGHT+4};
+        sdl_render_rect(pane, &loc, 4, SDL_GREEN);
     }
 
     // clear bottom of screen where the DELETE and BACK event text is to be displayed, and
@@ -1321,8 +1274,8 @@ static int event_hndlr_directory(pane_cx_t *pane_cx, sdl_event_t *event)
     int      idx, cnt;
 
     switch (event->event_id) {
-    case SDL_EVENT_DIR_MOUSE_WHEEL_SCROLL:
     case SDL_EVENT_DIR_MOUSE_MOTION_SCROLL:
+    case SDL_EVENT_DIR_MOUSE_WHEEL_SCROLL:   // Linux version
         if (event->event_id == SDL_EVENT_DIR_MOUSE_WHEEL_SCROLL) {
             if (event->mouse_wheel.delta_y > 0) {
                 y_top_dir += 20;
