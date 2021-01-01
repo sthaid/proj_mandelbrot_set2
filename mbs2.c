@@ -1,14 +1,17 @@
+// XXX
+// - make new files
+//   - add initial ctr to the first of files0
+// - fix QUIT, and rename PGM_EXIT, and move it somewhere else
+// - test useability on phone
+// - add startup alert or first time hidden alert about how to enable ctrls
+// - display alert when saving a file,  and other times too
+// - startup default in show mode
+
 // xxx
 // - don't allow deleting the last file ?
-// - fix QUIT, and rename PGM_EXIT, and move it somewhere else
-// - add startup alert or first time hidden alert about how to enable ctrls
-// - test useability on phone
 // - whay a delay here
 //     01/01/21 08:08:30.121 INFO cache_file_copy_assets_to_internal_storage: asset files have ...
 //     01/01/21 08:08:32.294 INFO sdl_init: sdl_win_width=1700 sdl_win_height=900
-// - display alert when saving a file,  and other times too
-// - add initial ctr to the first of files0
-// - startup default in show mode
 // - fixup help text
 // - ensure some of the key cmds are only allowed when in that mode
 
@@ -894,7 +897,7 @@ static void display_info_proc(rect_t *pane)
     }
 
     // render the lines
-    for (i = 0; i < n; i++) {//xxx vvv, why 1.2
+    for (i = 0; i < n; i++) {
         sdl_render_printf(
             pane, 0, 1.2*fch+ROW2Y(i,FONTSZ_SMALL), 
             FONTSZ_SMALL,  SDL_WHITE, SDL_BLACK, "%s", line[i]);
