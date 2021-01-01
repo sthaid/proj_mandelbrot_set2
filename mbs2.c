@@ -33,22 +33,16 @@
 #define INITIAL_WAVELEN_START     425
 #define INITIAL_WAVELEN_SCALE     8
 
-#define ZOOM_STEP                 0.1  // should be a submultiple of 1
-#define ZOOM_BIG_STEP             1.0  // should be >= 1
-
-#define MAX_WAVELEN_SCALE         40
 #define WAVELEN_FIRST             400
 #define WAVELEN_LAST              700
+#define MAX_WAVELEN_SCALE         40
 
-#ifndef ANDROID
-#define FONTSZ_SMALL  50
-#define FONTSZ_LARGE  90
-#else
-#define FONTSZ_SMALL  50
-#define FONTSZ_LARGE  90
-#endif
+#define ZOOM_STEP_SIZE            0.05  // should be a submultiple of 1
 
-#define SLIDE_SHOW_INTVL_US  5000000
+#define SLIDE_SHOW_INTVL_US       5000000
+
+#define FONTSZ_SMALL              50
+#define FONTSZ_LARGE              90
 
 //
 // typedefs
@@ -71,7 +65,7 @@ static void display_alert(rect_t *pane);
 
 static void render_hndlr_mbs(pane_cx_t *pane_cx);
 static int event_hndlr_mbs(pane_cx_t *pane_cx, sdl_event_t *event);
-static void zoom_step(double step_size);
+static void zoom_step(int n);
 static void init_color_lut(void);
 static void display_info_proc(rect_t *pane);
 static void create_file(char *params);
@@ -355,8 +349,9 @@ static void render_hndlr_mbs(pane_cx_t *pane_cx)
     #define SDL_EVENT_MBS_SAVE              (SDL_EVENT_USER_DEFINED + 14)
     #define SDL_EVENT_MBS_SVZM              (SDL_EVENT_USER_DEFINED + 15)
     #define SDL_EVENT_MBS_FILES             (SDL_EVENT_USER_DEFINED + 16)
-    #define SDL_EVENT_MBS_PAN               (SDL_EVENT_USER_DEFINED + 17)
-    #define SDL_EVENT_MBS_MOUSE_WHEEL_ZOOM  (SDL_EVENT_USER_DEFINED + 18)
+    #define SDL_EVENT_MBS_MOUSE_MOTION_PAN  (SDL_EVENT_USER_DEFINED + 17)
+    #define SDL_EVENT_MBS_MOUSE_MOTION_ZOOM (SDL_EVENT_USER_DEFINED + 18)
+    #define SDL_EVENT_MBS_MOUSE_WHEEL_ZOOM  (SDL_EVENT_USER_DEFINED + 19)
 
     // MODE_AUTOZ events
     #define SDL_EVENT_MBS_REV               (SDL_EVENT_USER_DEFINED + 30)
@@ -397,7 +392,7 @@ static void render_hndlr_mbs(pane_cx_t *pane_cx)
     // when zoom limit is reached then reverse auto zoom direction
     if (mode == MODE_AUTOZ) {
         if (!auto_zoom_pause) {
-            zoom_step(auto_zoom_in ? ZOOM_STEP : -ZOOM_STEP);
+            zoom_step(auto_zoom_in ? 2 : -2);
             if (ZOOM_TOTAL == 0) {
                 auto_zoom_in = true;
             } else if (ZOOM_TOTAL == (MAX_ZOOM-1)) {
@@ -452,12 +447,15 @@ static void render_hndlr_mbs(pane_cx_t *pane_cx)
         display_info_proc(pane);
     }
 
-    // if mode is normal then register for PAN via MOUSE_MOTION event and
+    // if mode is normal then register for PAN/ZOOM via MOUSE_MOTION event and
     // ZOOM via MOUSE_WHEEL events:
     // - this needs to be done prior to the MOUSE_CLICK event registrations below
     // - this also needs to be done before returning when ctrls are hidden
     if (mode == MODE_NORMAL) {
-        sdl_register_event(pane, pane, SDL_EVENT_MBS_PAN, SDL_EVENT_TYPE_MOUSE_MOTION, pane_cx);
+        int zoom_area_width = 4*fcw;
+        rect_t loc = (rect_t){pane->w-zoom_area_width, 0, zoom_area_width, pane->h};
+        sdl_register_event(pane, pane, SDL_EVENT_MBS_MOUSE_MOTION_PAN, SDL_EVENT_TYPE_MOUSE_MOTION, pane_cx);
+        sdl_register_event(pane, &loc, SDL_EVENT_MBS_MOUSE_MOTION_ZOOM, SDL_EVENT_TYPE_MOUSE_MOTION, pane_cx);
         sdl_register_event(pane, pane, SDL_EVENT_MBS_MOUSE_WHEEL_ZOOM, SDL_EVENT_TYPE_MOUSE_WHEEL, pane_cx);
     }
 
@@ -686,25 +684,26 @@ static int event_hndlr_mbs(pane_cx_t *pane_cx, sdl_event_t *event)
         slide_show_idx = -1;
         break;
 
-    // --- MODE_NORMAL: PAN ---
-    case SDL_EVENT_MBS_PAN: {
+    // --- MODE_NORMAL: PAN & ZOOM ---
+    case SDL_EVENT_MBS_MOUSE_MOTION_PAN: {
         double pixel_size = PIXEL_SIZE_AT_ZOOM0 * pow(2,-ZOOM_TOTAL);
         ctr += -(event->mouse_motion.delta_x * pixel_size) +
                -(event->mouse_motion.delta_y * pixel_size) * I;
         break; }
-
-    // --- MODE_NORMAL: ZOOM ---
+    case SDL_EVENT_MBS_MOUSE_MOTION_ZOOM: {
+        zoom_step(-event->mouse_motion.delta_y);
+        break; }
     case SDL_EVENT_MBS_ZIN:
-        zoom_step(ZOOM_BIG_STEP);
+        zoom_step(20);
         break;
     case SDL_EVENT_MBS_ZOUT:
-        zoom_step(-ZOOM_BIG_STEP);
+        zoom_step(-20);
         break;
     case SDL_EVENT_MBS_MOUSE_WHEEL_ZOOM:   // Linux version
         if (event->mouse_wheel.delta_y > 0) {
-            zoom_step(ZOOM_STEP);
+            zoom_step(2);
         } else if (event->mouse_wheel.delta_y < 0) {
-            zoom_step(-ZOOM_STEP);
+            zoom_step(-2);
         }
         break;
 
@@ -811,27 +810,32 @@ static int event_hndlr_mbs(pane_cx_t *pane_cx, sdl_event_t *event)
     return rc;
 }
 
-static void zoom_step(double step_size)
+static void zoom_step(int n)
 {
     double z = ZOOM_TOTAL;
+    int i;
 
-    z += step_size;
+    for (i = 0; i < abs(n); i++) {
+        z += (n > 0 ? ZOOM_STEP_SIZE : -ZOOM_STEP_SIZE);
 
-    if ((fabs(step_size) >= 1) ||
-        (fabs(z - nearbyint(z)) < 1e-6)) 
-    {
-        z = nearbyint(z);
-    }
+        if (z <= 0) {
+            z = 0;
+            break;
+        } else if (z >= (MAX_ZOOM-1)) {
+            z = (MAX_ZOOM-1);
+            break;
+        }
 
-    if (z < 0) {
-        z = 0;
-    } else if (z > (MAX_ZOOM-1)) {
-        z = (MAX_ZOOM-1);
+        if (fabs(z - nearbyint(z)) < 1e-6) {
+            z = nearbyint(z);
+            break;  // xxx comment why
+        }
     }
 
     zoom = z;
     zoom_fraction = z - zoom;
-    INFO("z=%f zoom=%d  frac=%f\n", z, zoom, zoom_fraction);
+
+    INFO("z=%f zoom=%d  frac=%f\n", z, zoom, zoom_fraction);// xxx temp print
 }
 
 static void init_color_lut(void)
