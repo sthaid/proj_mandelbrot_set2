@@ -132,6 +132,7 @@ static void cache_adjust_mbsval_ctr(cache_t *cp);
 static void *cache_thread(void *cx);
 static void cache_thread_get_zoom_lvl_tbl(int *zoom_lvl_tbl);
 static void cache_thread_issue_request(int req);
+static void cache_mbsval_all_same_optimization(int lvl_arg);
 static void cache_spiral_init(spiral_t *s, int x, int y);
 static void cache_spiral_get_next(spiral_t *s, int *x, int *y);
 
@@ -797,6 +798,7 @@ restart:
             // the mbs values in locations spiralling out from the center to encompass
             // the entire cache then continue with the next zoom_lvl_tbl index
             if (cp->spiral_done) {
+                DEBUG("spiral is already done at lvl=%d\n", zoom_lvl_tbl[n]);
                 continue;
             }
 
@@ -818,6 +820,9 @@ restart:
 
                 COMPUTE_MBSVAL(idx_a,idx_b,cp);
             }
+
+            // xxx comment
+            cache_mbsval_all_same_optimization(zoom_lvl_tbl[n]);
         }
 
         // caching of all zoom levels has completed
@@ -886,6 +891,40 @@ static void cache_thread_issue_request(int req)
     //        then start doing its work
     while (cache_thread_request != CACHE_THREAD_REQUEST_NONE) {
         usleep(100);
+    }
+}
+
+static void cache_mbsval_all_same_optimization(int lvl_arg)
+{
+    cache_t *cp;
+    unsigned short *mbsval, first_val;
+    int i, lvl;
+
+    cp = &cache[lvl_arg];
+    if (cp->spiral_done == false) {
+        FATAL("spiral_done == false\n");
+    }
+
+    mbsval = (*cp->mbsval)[0];
+    first_val = mbsval[0];
+    for (i = 0; i < CACHE_WIDTH*CACHE_HEIGHT; i++) {
+        if (mbsval[i] != first_val) {
+            return;
+        }
+    }
+    INFO("XXX ALL SAME at lvl_arg %d  val=%d\n", lvl_arg, first_val);
+    INFO("   XXX optimizing starting at lvl %d\n", lvl_arg+1);
+
+    // xxx all the same ...
+    for (lvl = lvl_arg+1; lvl < MAX_ZOOM; lvl++) {
+        cp = &cache[lvl];
+        cp->ctr         = cache_ctr;
+        cp->spiral      = cache_initial_spiral;
+        cp->spiral_done = true;
+        mbsval = (*cp->mbsval)[0];
+        for (i = 0; i < CACHE_WIDTH*CACHE_HEIGHT; i++) {
+            mbsval[i] = first_val;
+        }
     }
 }
 
