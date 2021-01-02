@@ -1,19 +1,36 @@
 // XXX
+// - find a way to select to ctr
+// - test useability on phone
+// - display alert when saving a file,  and other times too
+// - stop caching when all data is the same
 // - make new files
 //   - add initial ctr to the first of files0
-// - fix QUIT, and rename PGM_EXIT, and move it somewhere else
-// - test useability on phone
-// - add startup alert or first time hidden alert about how to enable ctrls
-// - display alert when saving a file,  and other times too
-// - startup default in show mode
+// - fixup help text
 
 // xxx
+// - PASSWORDS
+// - define for 200
+
+// xxx
+// - when toggling full screen there is an initial pan jump
+// - fix QUIT, and rename PGM_EXIT, and move it somewhere else
+// - info and help text can be little larger
 // - don't allow deleting the last file ?
 // - whay a delay here
 //     01/01/21 08:08:30.121 INFO cache_file_copy_assets_to_internal_storage: asset files have ...
 //     01/01/21 08:08:32.294 INFO sdl_init: sdl_win_width=1700 sdl_win_height=900
-// - fixup help text
 // - ensure some of the key cmds are only allowed when in that mode
+
+// DONE
+// - move hide to corner
+//   - display alert at startup
+// - zoom may be too sensitive
+// - panning problem
+// - add startup alert or first time hidden alert about how to enable ctrls
+// - CLUT - + too close
+//   . too sensitive
+//   . wrong direction
+// - startup default in show mode
 
 #include <common.h>
 
@@ -40,7 +57,7 @@
 #define WAVELEN_LAST              700
 #define MAX_WAVELEN_SCALE         40
 
-#define ZOOM_STEP_SIZE            0.05  // should be a submultiple of 1
+#define ZOOM_STEP_SIZE            0.025  // should be a submultiple of 1
 
 #define SLIDE_SHOW_INTVL_US       5000000
 
@@ -315,11 +332,11 @@ static int          wavelen_start                = INITIAL_WAVELEN_START;
 static int          wavelen_scale                = INITIAL_WAVELEN_SCALE;
 static unsigned int color_lut[65536];
 
-static bool         ctrls_hidden                 = false;
+static bool         ctrls_hidden                 = true;
 static bool         display_info                 = false;
 static bool         debug_force_cache_thread_run = false;
 
-static int          mode                         = MODE_NORMAL;
+static int          mode                         = MODE_SHOW;
 static bool         auto_zoom_in                 = true;
 static bool         auto_zoom_pause              = false;
 static uint64_t     slide_show_time_us           = 0;
@@ -383,6 +400,9 @@ static void render_hndlr_mbs(pane_cx_t *pane_cx)
         // this would normally be done by the above call to show_file, except
         //  when max_file_info is zero
         init_color_lut();
+
+        // set startup alert
+        set_alert(SDL_WHITE, "TAP BOTTOM LEFT FOR CTRLS");
     }
 
     // if re-entering mbs display then 
@@ -395,7 +415,7 @@ static void render_hndlr_mbs(pane_cx_t *pane_cx)
     // when zoom limit is reached then reverse auto zoom direction
     if (mode == MODE_AUTOZ) {
         if (!auto_zoom_pause) {
-            zoom_step(auto_zoom_in ? 2 : -2);
+            zoom_step(auto_zoom_in ? 4 : -4);
             if (ZOOM_TOTAL == 0) {
                 auto_zoom_in = true;
             } else if (ZOOM_TOTAL == (MAX_ZOOM-1)) {
@@ -455,7 +475,7 @@ static void render_hndlr_mbs(pane_cx_t *pane_cx)
     // - this needs to be done prior to the MOUSE_CLICK event registrations below
     // - this also needs to be done before returning when ctrls are hidden
     if (mode == MODE_NORMAL) {
-        int zoom_area_width = 4*fcw;
+        int zoom_area_width = 6*fcw;
         rect_t loc = (rect_t){pane->w-zoom_area_width, 0, zoom_area_width, pane->h};
         sdl_register_event(pane, pane, SDL_EVENT_MBS_MOUSE_MOTION_PAN, SDL_EVENT_TYPE_MOUSE_MOTION, pane_cx);
         sdl_register_event(pane, &loc, SDL_EVENT_MBS_MOUSE_MOTION_ZOOM, SDL_EVENT_TYPE_MOUSE_MOTION, pane_cx);
@@ -467,8 +487,8 @@ static void render_hndlr_mbs(pane_cx_t *pane_cx)
     //   return
     // endif
     if (ctrls_hidden) {
-        int xsz=300, ysz=300;
-        rect_t loc = (rect_t){pane->w/2-xsz/2, pane->h/2-ysz/2, xsz, ysz};
+        int xsz=300, ysz=200;
+        rect_t loc = (rect_t){0, pane->h-ysz, xsz, ysz};
         sdl_register_event(pane, &loc, SDL_EVENT_MBS_HIDE, SDL_EVENT_TYPE_MOUSE_CLICK, pane_cx);
         //sdl_render_fill_rect(pane, &loc, SDL_BLACK);  // xxx temp
         return;
@@ -569,7 +589,7 @@ static void render_hndlr_mbs(pane_cx_t *pane_cx)
                 SDL_EVENT_MBS_FILES, SDL_EVENT_TYPE_MOUSE_CLICK, pane_cx);
 
     } else if (mode == MODE_CLUT) {
-        int i, x_start=0, height=150;
+        int i, spacing, height=150;
         rect_t loc;
 
         // clear bottom of display
@@ -579,7 +599,7 @@ static void render_hndlr_mbs(pane_cx_t *pane_cx)
         // display example: ----CLUT----  -   +   400 22
 
         // - clut
-        x = x_start;
+        x = 0;
         y = pane->h - height;
         for (i = 0; i < MBSVAL_IN_SET; i++) {
             unsigned char r,g,b;
@@ -588,27 +608,31 @@ static void render_hndlr_mbs(pane_cx_t *pane_cx)
             sdl_render_line(pane, x+i, y, x+i, pane->h-1, FIRST_SDL_CUSTOM_COLOR);
         }
 
+        // xxx
+        spacing = ((pane->w - MBSVAL_IN_SET) - 14 * fcw) / 3;
+        // xxx INFO("spacing %d\n", spacing);
+
         // - SDL_EVENT_MBS_WVLEN_SCALE_MINUS event, " - "
-        x += MBSVAL_IN_SET;
+        x += MBSVAL_IN_SET + fcw + spacing;
         y = (pane->h - height) + (height - fch) / 2;
         sdl_render_text_and_register_event(
                 pane, x, y, FONTSZ_LARGE, " - ", SDL_LIGHT_BLUE, SDL_BLACK,
                 SDL_EVENT_MBS_WVLEN_SCALE_MINUS, SDL_EVENT_TYPE_MOUSE_CLICK, pane_cx);
 
         // - SDL_EVENT_MBS_WVLEN_SCALE_PLUS event, " + "
-        x += 3 * fcw;
+        x += 3 * fcw + spacing;
         sdl_render_text_and_register_event(
                 pane, x, y, FONTSZ_LARGE, " + ", SDL_LIGHT_BLUE, SDL_BLACK,
                 SDL_EVENT_MBS_WVLEN_SCALE_PLUS, SDL_EVENT_TYPE_MOUSE_CLICK, pane_cx);
 
         // - print wavelen_start and wavelen_scale
-        x += 3 * fcw;
+        x += 3 * fcw + spacing;
         sdl_render_printf(
             pane, x, y,
             FONTSZ_LARGE, SDL_WHITE, SDL_BLACK, "%d %d", wavelen_start, wavelen_scale);
 
         // register for SDL_EVENT_MBS_WVLEN_START mouse motion event
-        loc = (rect_t){x_start, pane->h-height, MBSVAL_IN_SET, height};
+        loc = (rect_t){0, pane->h-height, MBSVAL_IN_SET, height};
         sdl_register_event(pane, &loc, SDL_EVENT_MBS_WVLEN_START, SDL_EVENT_TYPE_MOUSE_MOTION, pane_cx);
     } else if (mode == MODE_AUTOZ) {
         // HIDE
@@ -658,6 +682,7 @@ static void render_hndlr_mbs(pane_cx_t *pane_cx)
 static int event_hndlr_mbs(pane_cx_t *pane_cx, sdl_event_t *event)
 {
     int rc = PANE_HANDLER_RET_NO_ACTION;
+    rect_t *pane = &pane_cx->pane;
 
     switch (event->event_id) {
     // --- GOTO HELP DISPLAY ---
@@ -690,23 +715,23 @@ static int event_hndlr_mbs(pane_cx_t *pane_cx, sdl_event_t *event)
     // --- MODE_NORMAL: PAN & ZOOM ---
     case SDL_EVENT_MBS_MOUSE_MOTION_PAN: {
         double pixel_size = PIXEL_SIZE_AT_ZOOM0 * pow(2,-ZOOM_TOTAL);
-        ctr += -(event->mouse_motion.delta_x * pixel_size) +
-               -(event->mouse_motion.delta_y * pixel_size) * I;
+        ctr += -(event->mouse_motion.delta_x * pixel_size * ((double)(CACHE_WIDTH - 200) / pane->w) ) +
+               -(event->mouse_motion.delta_y * pixel_size * ((double)(CACHE_HEIGHT - 200) / pane->h)) * I;
         break; }
     case SDL_EVENT_MBS_MOUSE_MOTION_ZOOM: {
         zoom_step(-event->mouse_motion.delta_y);
         break; }
     case SDL_EVENT_MBS_ZIN:
-        zoom_step(20);
+        zoom_step(40);
         break;
     case SDL_EVENT_MBS_ZOUT:
-        zoom_step(-20);
+        zoom_step(-40);
         break;
     case SDL_EVENT_MBS_MOUSE_WHEEL_ZOOM:   // Linux version
         if (event->mouse_wheel.delta_y > 0) {
-            zoom_step(2);
+            zoom_step(4);
         } else if (event->mouse_wheel.delta_y < 0) {
-            zoom_step(-2);
+            zoom_step(-4);
         }
         break;
 
@@ -768,8 +793,15 @@ static int event_hndlr_mbs(pane_cx_t *pane_cx, sdl_event_t *event)
     case SDL_EVENT_MBS_WVLEN_START: 
     case SDL_EVENT_KEY_LEFT_ARROW:     // Linux version
     case SDL_EVENT_KEY_RIGHT_ARROW: {  // Linux version
-        int delta = (event->event_id == SDL_EVENT_MBS_WVLEN_START ? -event->mouse_motion.delta_x :
-                     event->event_id == SDL_EVENT_KEY_LEFT_ARROW ? -1 : +1);
+        int delta;
+        if (event->event_id == SDL_EVENT_MBS_WVLEN_START) {
+            static double static_delta;
+            static_delta += event->mouse_motion.delta_x / 8.;
+            delta = static_delta;
+            static_delta -= delta;
+        } else {
+            delta = (event->event_id == SDL_EVENT_KEY_LEFT_ARROW ? -1 : +1);
+        }
         wavelen_start += delta;
         if (wavelen_start < WAVELEN_FIRST) wavelen_start = WAVELEN_LAST;
         if (wavelen_start > WAVELEN_LAST) wavelen_start = WAVELEN_FIRST;
@@ -946,6 +978,10 @@ static int save_file(int file_type)
     unsigned int   *pixels;
     unsigned short *mbsval;
     double          x, y, x_step, y_step, x_start, y_start;
+
+    // set alert
+    // xxx doesn't work
+    //set_alert(SDL_WHITE, "SAVING FILE");
 
     // init
     w = (CACHE_WIDTH - 200) *  pow(2, -zoom_fraction);
