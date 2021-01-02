@@ -1,8 +1,7 @@
 // XXX
-// - find a way to select to ctr
+// - stop caching when all data is the same
 // - test useability on phone
 // - display alert when saving a file,  and other times too
-// - stop caching when all data is the same
 // - make new files
 //   - add initial ctr to the first of files0
 // - fixup help text
@@ -31,6 +30,7 @@
 //   . too sensitive
 //   . wrong direction
 // - startup default in show mode
+// - find a way to select to ctr
 
 #include <common.h>
 
@@ -418,8 +418,10 @@ static void render_hndlr_mbs(pane_cx_t *pane_cx)
             zoom_step(auto_zoom_in ? 4 : -4);
             if (ZOOM_TOTAL == 0) {
                 auto_zoom_in = true;
-            } else if (ZOOM_TOTAL == (MAX_ZOOM-1)) {
+            } else if (ZOOM_TOTAL >= cache_get_last_zoom()) {
                 auto_zoom_in = false;
+                zoom = cache_get_last_zoom();
+                zoom_fraction = 0;
             }
         }
     }
@@ -798,11 +800,11 @@ static int event_hndlr_mbs(pane_cx_t *pane_cx, sdl_event_t *event)
         break;
     case 'z':  
         // goto either fully zoomed in or out
-        if (ZOOM_TOTAL == (MAX_ZOOM-1)) {
+        if (ZOOM_TOTAL >= cache_get_last_zoom()) {
             zoom = 0;
             zoom_fraction = 0;
         } else {
-            zoom = (MAX_ZOOM-1);
+            zoom = cache_get_last_zoom();
             zoom_fraction = 0;
         }
         break;
@@ -882,8 +884,8 @@ static void zoom_step(int n)
         if (z <= 0) {
             z = 0;
             break;
-        } else if (z >= (MAX_ZOOM-1)) {
-            z = (MAX_ZOOM-1);
+        } else if (z >= cache_get_last_zoom()) {
+            z = cache_get_last_zoom();
             break;
         }
 
@@ -938,7 +940,7 @@ static void display_info_proc(rect_t *pane)
     // print info to line[] array
     sprintf(line[n++], "Ctr-A: %+0.9f", creal(ctr));
     sprintf(line[n++], "Ctr-B: %+0.9f", cimag(ctr));
-    sprintf(line[n++], "Zoom:  %0.2f", ZOOM_TOTAL);
+    sprintf(line[n++], "Zoom:  %0.2f %d", ZOOM_TOTAL, cache_get_last_zoom());
     sprintf(line[n++], "CLUT:  %d %d", wavelen_start, wavelen_scale);   
     sprintf(line[n++], "Cache: %d%%", cache_thread_percent_complete());
 

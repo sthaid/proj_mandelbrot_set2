@@ -112,6 +112,7 @@ typedef struct {
 static complex_t cache_ctr;
 static int       cache_zoom;
 static cache_t   cache[MAX_ZOOM];
+static int       cache_last_zoom;
 
 static spiral_t  cache_initial_spiral;
 static int       cache_thread_request;
@@ -174,6 +175,12 @@ void cache_param_change(complex_t ctr, int zoom, bool force)
 
     // stop the cache_thread
     cache_thread_issue_request(CACHE_THREAD_REQUEST_STOP);
+
+    // xxx
+    if (ctr != cache_ctr) {
+        cache_last_zoom = MAX_ZOOM-1;
+        INFO("cache last zoom = %d\n", cache_last_zoom);
+    }
 
     // update cache_ctr, cache_zoom
     cache_ctr  = ctr;
@@ -683,6 +690,11 @@ int cache_thread_percent_complete(void)
     return cache_thread_percent_done;
 }
 
+int cache_get_last_zoom(void)
+{
+    return cache_last_zoom;
+}
+
 static void *cache_thread(void *cx)
 {
     #define CHECK_FOR_STOP_REQUEST \
@@ -926,6 +938,11 @@ static void cache_mbsval_all_same_optimization(int lvl_arg)
             mbsval[i] = first_val;
         }
     }
+
+    // xxx
+    __sync_synchronize();
+    cache_last_zoom = lvl_arg;
+    INFO("cache last zoom = %d\n", cache_last_zoom);
 }
 
 static void cache_spiral_init(spiral_t *s, int x, int y)

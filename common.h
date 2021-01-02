@@ -88,6 +88,7 @@ void cache_get_mbsval(unsigned short *mbsval);
 
 bool cache_thread_first_zoom_lvl_is_finished(void);
 int cache_thread_percent_complete(void);
+int cache_get_last_zoom(void);
 
 int cache_file_create(complex_t ctr, int zoom, double zoom_fraction, int wavelen_start, int wavelen_scale,
                       unsigned int *dir_pixels);
