@@ -126,6 +126,12 @@ typedef struct {
         struct {
             int32_t delta_x;
             int32_t delta_y;
+            int32_t x;
+            int32_t y;
+            bool start;
+            bool end;
+            int32_t end_abs_total_delta_x;
+            int32_t end_abs_total_delta_y;
         } mouse_motion;
         struct {
             int32_t delta_x;

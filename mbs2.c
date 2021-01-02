@@ -715,11 +715,37 @@ static int event_hndlr_mbs(pane_cx_t *pane_cx, sdl_event_t *event)
     // --- MODE_NORMAL: PAN & ZOOM ---
     case SDL_EVENT_MBS_MOUSE_MOTION_PAN: {
         double pixel_size = PIXEL_SIZE_AT_ZOOM0 * pow(2,-ZOOM_TOTAL);
-        ctr += -(event->mouse_motion.delta_x * pixel_size * ((double)(CACHE_WIDTH - 200) / pane->w) ) +
-               -(event->mouse_motion.delta_y * pixel_size * ((double)(CACHE_HEIGHT - 200) / pane->h)) * I;
+        int dx, dy;
+        // xxx needs a comment
+        if (!event->mouse_motion.end) {
+            ctr += -(event->mouse_motion.delta_x * pixel_size * ((double)(CACHE_WIDTH - 200) / pane->w) ) +
+                -(event->mouse_motion.delta_y * pixel_size * ((double)(CACHE_HEIGHT - 200) / pane->h)) * I;
+        } else {
+            if (event->mouse_motion.end_abs_total_delta_x == 0 &&
+                event->mouse_motion.end_abs_total_delta_y == 0)
+            {
+                dx = (pane->w/2 - event->mouse_motion.x);
+                dy = (pane->h/2 - event->mouse_motion.y);
+                ctr += -(dx * pixel_size * ((double)(CACHE_WIDTH - 200) / pane->w) ) +
+                       -(dy * pixel_size * ((double)(CACHE_HEIGHT - 200) / pane->h)) * I;
+            }
+        }
         break; }
     case SDL_EVENT_MBS_MOUSE_MOTION_ZOOM: {
-        zoom_step(-event->mouse_motion.delta_y);
+        double pixel_size = PIXEL_SIZE_AT_ZOOM0 * pow(2,-ZOOM_TOTAL);
+        int dx, dy;
+        if (!event->mouse_motion.end) {
+            zoom_step(-event->mouse_motion.delta_y);
+        } else {
+            if (event->mouse_motion.end_abs_total_delta_x == 0 &&
+                event->mouse_motion.end_abs_total_delta_y == 0)
+            {
+                dx = (pane->w/2 - event->mouse_motion.x);
+                dy = (pane->h/2 - event->mouse_motion.y);
+                ctr += -(dx * pixel_size * ((double)(CACHE_WIDTH - 200) / pane->w) ) +
+                       -(dy * pixel_size * ((double)(CACHE_HEIGHT - 200) / pane->h)) * I;
+            }
+        }
         break; }
     case SDL_EVENT_MBS_ZIN:
         zoom_step(40);

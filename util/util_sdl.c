@@ -65,6 +65,7 @@ typedef struct {
     int32_t event_type;
     void * event_cx;
     rect_t disp_loc;
+    rect_t pane;
 } sdl_event_reg_t;
 
 //
@@ -792,6 +793,7 @@ void sdl_register_event(rect_t * pane, rect_t * loc, int32_t event_id, int32_t e
     e->disp_loc.w = loc->w;
     e->disp_loc.h = loc->h;
     e->event_cx = event_cx;
+    e->pane = *pane;
 
     sdl_event_max++;
 }
@@ -861,10 +863,11 @@ sdl_event_t * sdl_poll_event(void)
         bool active;
         int32_t event_id;
         void * event_cx;
-        int32_t x_start;
-        int32_t y_start;
+        rect_t pane;
         int32_t x_last;
         int32_t y_last;
+        int32_t abs_total_delta_x;
+        int32_t abs_total_delta_y;
     } mouse_motion;
 
     memset(&event, 0,sizeof(event));
@@ -948,15 +951,22 @@ sdl_event_t * sdl_poll_event(void)
                 mouse_motion.active = true;
                 mouse_motion.event_id = sdl_event_reg_tbl[i].event_id;
                 mouse_motion.event_cx = sdl_event_reg_tbl[i].event_cx;
-                mouse_motion.x_start = ev.button.x;
-                mouse_motion.y_start = ev.button.y;
-                mouse_motion.x_last  = ev.button.x;
-                mouse_motion.y_last  = ev.button.y;
+                mouse_motion.pane     = sdl_event_reg_tbl[i].pane;
+                mouse_motion.x_last   = ev.button.x;
+                mouse_motion.y_last   = ev.button.y;
+                mouse_motion.abs_total_delta_x = 0;
+                mouse_motion.abs_total_delta_y = 0;
 
                 event.event_id = mouse_motion.event_id;
                 event.event_cx = mouse_motion.event_cx;
                 event.mouse_motion.delta_x = 0;
                 event.mouse_motion.delta_y = 0;
+                event.mouse_motion.x = ev.button.x - mouse_motion.pane.x;
+                event.mouse_motion.y = ev.button.y - mouse_motion.pane.y;
+                event.mouse_motion.start = true;
+                event.mouse_motion.end = false;
+                event.mouse_motion.end_abs_total_delta_x = 0;
+                event.mouse_motion.end_abs_total_delta_y = 0;
             }
             break; }
 
@@ -978,6 +988,23 @@ sdl_event_t * sdl_poll_event(void)
                 break;
             }
 
+            // if mouse motion is active then return the mouse motion event
+            // with 'end' flag set; and including the total absolute value of
+            // x and y motion; this can be used by caller to perform a different
+            // response when there is no motion
+            if (mouse_motion.active) {
+                event.event_id = mouse_motion.event_id;
+                event.event_cx = mouse_motion.event_cx;
+                event.mouse_motion.delta_x = 0;
+                event.mouse_motion.delta_y = 0;
+                event.mouse_motion.x = ev.button.x - mouse_motion.pane.x;
+                event.mouse_motion.y = ev.button.y - mouse_motion.pane.y;
+                event.mouse_motion.start = false;
+                event.mouse_motion.end = true;
+                event.mouse_motion.end_abs_total_delta_x = mouse_motion.abs_total_delta_x;
+                event.mouse_motion.end_abs_total_delta_y = mouse_motion.abs_total_delta_y;
+            }
+
             // clear mouse_motion 
             memset(&mouse_motion,0,sizeof(mouse_motion));
             break; }
@@ -993,9 +1020,20 @@ sdl_event_t * sdl_poll_event(void)
             event.event_cx = mouse_motion.event_cx;
             event.mouse_motion.delta_x = 0;
             event.mouse_motion.delta_y = 0;
+            event.mouse_motion.x = 0;
+            event.mouse_motion.y = 0;
+            event.mouse_motion.start = false;
+            event.mouse_motion.end = false;
+            event.mouse_motion.end_abs_total_delta_x = 0;
+            event.mouse_motion.end_abs_total_delta_y = 0;
+
             do {
                 event.mouse_motion.delta_x += ev.motion.x - mouse_motion.x_last;
                 event.mouse_motion.delta_y += ev.motion.y - mouse_motion.y_last;
+                event.mouse_motion.x = ev.motion.x - mouse_motion.pane.x;
+                event.mouse_motion.y = ev.motion.y - mouse_motion.pane.y;
+                mouse_motion.abs_total_delta_x += abs(ev.motion.x - mouse_motion.x_last);
+                mouse_motion.abs_total_delta_y += abs(ev.motion.y - mouse_motion.y_last);
                 mouse_motion.x_last = ev.motion.x;
                 mouse_motion.y_last = ev.motion.y;
             } while (SDL_PeepEvents(&ev, 1, SDL_GETEVENT, SDL_MOUSEMOTION, SDL_MOUSEMOTION) == 1);
