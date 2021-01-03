@@ -6,7 +6,7 @@ This program provides the ability to explore the
 Mandelbrot Set.
 
 Summary of features:
-- Save favorite places
+- Save Favorite Places
 - Slide Show
 - Auto Zoom
 - Adjustable Color Lookup Table
@@ -80,7 +80,7 @@ SAVE and SVZM: Are used to save additional files.
   The SAVE button is available when the current zoom 
   level is fully computed. The SVZM button is available
   after all zoom levels have been computed. Computing all
-   zoom levels can take some time.
+  zoom levels can take some time.
   
 SHOW: Enables Slide Show mode.
 
@@ -102,6 +102,6 @@ INFO: displays the following information:
     zoom factor of 16. The second number is the max zoom;
     this will be either 46 (a zoom factor of 70 trillion),
     or a lower value which indicating the zoom at which
-    there is no longer any detail.
+    there is no longer any detail to display.
   CLUT: Wavelen start, and scale.
   Cache: 100% means all zoom levels have been computed.
