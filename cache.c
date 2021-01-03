@@ -176,7 +176,8 @@ void cache_param_change(complex_t ctr, int zoom, bool force)
     // stop the cache_thread
     cache_thread_issue_request(CACHE_THREAD_REQUEST_STOP);
 
-    // xxx
+    // if the cache_ctr is being changed then start by
+    // assuming cache_last_zoom is the maximum
     if (ctr != cache_ctr) {
         cache_last_zoom = MAX_ZOOM-1;
         INFO("cache last zoom = %d\n", cache_last_zoom);
@@ -610,7 +611,6 @@ void cache_file_update(int idx, int file_type)
     STAT(fi->file_name, fd, fi->file_size);
     LSEEK(fi->file_name, fd, offsetof(cache_file_info_t,file_size));
     WRITE(fi->file_name, fd, &fi->file_size, sizeof(fi->file_size));
-    INFO("XXX updated SIZE to %d\n", fi->file_size);
 
     // close
     CLOSE(fi->file_name, fd);
@@ -787,7 +787,7 @@ restart:
         for (n = 0; n < MAX_ZOOM; n++) {
             CHECK_FOR_STOP_REQUEST;
 
-            // xxx comment
+            // provide first_zoom_lvl_finished status
             if (n == 1) {
                 cache_thread_first_zoom_lvl_finished = true;
                 __sync_synchronize();
@@ -833,7 +833,11 @@ restart:
                 COMPUTE_MBSVAL(idx_a,idx_b,cp);
             }
 
-            // xxx comment
+            // we've just finished caching a zoom level; 
+            // the optimization being performed here is to check if the 
+            // mbs values are all the same; and if so then declare all 
+            // higher zoom levels complete, and set their values identical
+            // to the mbs value of this level
             cache_mbsval_all_same_optimization(zoom_lvl_tbl[n]);
         }
 
@@ -906,17 +910,20 @@ static void cache_thread_issue_request(int req)
     }
 }
 
+// xxx maybe allow small variation
 static void cache_mbsval_all_same_optimization(int lvl_arg)
 {
     cache_t *cp;
     unsigned short *mbsval, first_val;
     int i, lvl;
 
+    // sanity check that this level is complete
     cp = &cache[lvl_arg];
     if (cp->spiral_done == false) {
         FATAL("spiral_done == false\n");
     }
 
+    // check if all values are the same; and return if not so
     mbsval = (*cp->mbsval)[0];
     first_val = mbsval[0];
     for (i = 0; i < CACHE_WIDTH*CACHE_HEIGHT; i++) {
@@ -924,10 +931,11 @@ static void cache_mbsval_all_same_optimization(int lvl_arg)
             return;
         }
     }
-    INFO("XXX ALL SAME at lvl_arg %d  val=%d\n", lvl_arg, first_val);
-    INFO("   XXX optimizing starting at lvl %d\n", lvl_arg+1);
 
-    // xxx all the same ...
+    // loop over all higher zoom levels
+    // - set their ctr and done flag
+    // - set all of their mbsval to the value that 
+    //   was determined to be the same by the above code
     for (lvl = lvl_arg+1; lvl < MAX_ZOOM; lvl++) {
         cp = &cache[lvl];
         cp->ctr         = cache_ctr;
@@ -939,10 +947,10 @@ static void cache_mbsval_all_same_optimization(int lvl_arg)
         }
     }
 
-    // xxx
+    // publish the last zoom value; this will be queried by the code
+    // in mbs2.c to limit zoom in 
     __sync_synchronize();
     cache_last_zoom = lvl_arg;
-    INFO("cache last zoom = %d\n", cache_last_zoom);
 }
 
 static void cache_spiral_init(spiral_t *s, int x, int y)
