@@ -178,13 +178,12 @@ typedef struct pane_cx_s {
 // PROTOTYPES
 //
 
-// sdl initialize
+// sdl initialize, and misc routines
 int32_t sdl_init(int32_t * w, int32_t * h, bool fullscreen, bool resizeable, bool swap_white_black);
 void sdl_get_window_size(int32_t * w, int32_t * h);
 void sdl_get_max_texture_dim(int32_t * max_texture_dim);
-
-// display mode
 void sdl_full_screen(bool enable);
+void sdl_minimize_window(void);
 
 // pane support
 void sdl_pane_manager(void *display_cx,                        // optional, context

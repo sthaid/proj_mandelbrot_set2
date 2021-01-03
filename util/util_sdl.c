@@ -324,6 +324,11 @@ static void font_init(int32_t font_ptsize)
          font_ptsize, sdl_font[font_ptsize].char_width, sdl_font[font_ptsize].char_height);
 }
 
+void sdl_minimize_window(void)
+{
+    SDL_MinimizeWindow(sdl_window);
+}
+
 // -----------------  PANE MANAGER  ------------------------------------- 
 
 void sdl_pane_manager(void *display_cx,                        // optional, context

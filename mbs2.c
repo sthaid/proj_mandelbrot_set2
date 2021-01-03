@@ -1,27 +1,25 @@
 // XXX
 // - make new files, add initial ctr to the first of files0
-// - fixup help text
 // - fix QUIT, and rename PGM_EXIT, and move it somewhere else
 // - retest on phone
 // - make android icon
 // - publish to store
 // - define for 200
 // - marked xxx issued
-
-// xxx
 // - PASSWORDS
 // - don't allow deleting the last file ?
-// - why a delay here
-//     01/01/21 08:08:30.121 INFO cache_file_copy_assets_to_internal_storage: asset files have ...
-//     01/01/21 08:08:32.294 INFO sdl_init: sdl_win_width=1700 sdl_win_height=900
 
 // xxx PROBABLY NOT
 // - info and help text can be little larger
 // - allow +/- 1 for all same determination
 // - when toggling full screen there is an initial pan jump
 // - ensure some of the key cmds are only allowed when in that mode
+// - why a delay here
+//     01/01/21 08:08:30.121 INFO cache_file_copy_assets_to_internal_storage: asset files have ...
+//     01/01/21 08:08:32.294 INFO sdl_init: sdl_win_width=1700 sdl_win_height=900
 
 // DONE
+// - fixup help text
 
 #include <common.h>
 
@@ -356,6 +354,7 @@ static void render_hndlr_mbs(pane_cx_t *pane_cx)
     #define SDL_EVENT_MBS_SHOW              (SDL_EVENT_USER_DEFINED + 3)
     #define SDL_EVENT_MBS_HELP              (SDL_EVENT_USER_DEFINED + 4)
     #define SDL_EVENT_MBS_HIDE              (SDL_EVENT_USER_DEFINED + 5)
+    #define SDL_EVENT_MBS_MIN               (SDL_EVENT_USER_DEFINED + 6)
 
     // MODE_NORMAL events
     #define SDL_EVENT_MBS_PRIOR             (SDL_EVENT_USER_DEFINED + 10)
@@ -556,6 +555,13 @@ static void render_hndlr_mbs(pane_cx_t *pane_cx)
                 pane, x, y, FONTSZ_LARGE, " > ", SDL_LIGHT_BLUE, SDL_BLACK,
                 SDL_EVENT_MBS_NEXT, SDL_EVENT_TYPE_MOUSE_CLICK, pane_cx);
 
+        // MIN
+        x = 0;
+        y = (pane->h/2 + (pane->h-fch/2))/2 - fch/2;
+        sdl_render_text_and_register_event(
+                pane, x, y, FONTSZ_LARGE, " MIN", SDL_LIGHT_BLUE, SDL_BLACK,
+                SDL_EVENT_MBS_MIN, SDL_EVENT_TYPE_MOUSE_CLICK, pane_cx);
+
         // HIDE
         x = 0; 
         y = pane->h-fch;
@@ -641,6 +647,13 @@ static void render_hndlr_mbs(pane_cx_t *pane_cx)
         loc = (rect_t){0, pane->h-height, MBSVAL_IN_SET, height};
         sdl_register_event(pane, &loc, SDL_EVENT_MBS_WVLEN_START, SDL_EVENT_TYPE_MOUSE_MOTION, pane_cx);
     } else if (mode == MODE_AUTOZ) {
+        // MIN
+        x = 0;
+        y = (pane->h/2 + (pane->h-fch/2))/2 - fch/2;
+        sdl_render_text_and_register_event(
+                pane, x, y, FONTSZ_LARGE, " MIN", SDL_LIGHT_BLUE, SDL_BLACK,
+                SDL_EVENT_MBS_MIN, SDL_EVENT_TYPE_MOUSE_CLICK, pane_cx);
+
         // HIDE
         x = 0; 
         y = pane->h-fch;
@@ -669,6 +682,13 @@ static void render_hndlr_mbs(pane_cx_t *pane_cx)
             FONTSZ_LARGE, SDL_WHITE, SDL_BLACK, "%0.1f %s", 
             ZOOM_TOTAL, (auto_zoom_in ? "IN" : "OUT"));
     } else if (mode == MODE_SHOW) {
+        // MIN
+        x = 0;
+        y = (pane->h/2 + (pane->h-fch/2))/2 - fch/2;
+        sdl_render_text_and_register_event(
+                pane, x, y, FONTSZ_LARGE, " MIN", SDL_LIGHT_BLUE, SDL_BLACK,
+                SDL_EVENT_MBS_MIN, SDL_EVENT_TYPE_MOUSE_CLICK, pane_cx);
+
         // HIDE
         x = 0; 
         y = pane->h-fch;
@@ -691,9 +711,20 @@ static int event_hndlr_mbs(pane_cx_t *pane_cx, sdl_event_t *event)
     rect_t *pane = &pane_cx->pane;
 
     switch (event->event_id) {
+
+    // --- DEBUG ---
+    case SDL_EVENT_KEY_F(2):  // Linux version
+        debug_force_cache_thread_run = true;
+        break;
+
     // --- GOTO HELP DISPLAY ---
     case SDL_EVENT_MBS_HELP:
         SET_DISPLAY(DISPLAY_HELP);
+        break;
+
+    // --- MINIMIZE ---
+    case SDL_EVENT_MBS_MIN:
+        sdl_minimize_window();
         break;
 
     // --- TOGGLES ---
@@ -859,11 +890,6 @@ static int event_hndlr_mbs(pane_cx_t *pane_cx, sdl_event_t *event)
         wavelen_start = INITIAL_WAVELEN_START;
         wavelen_scale = INITIAL_WAVELEN_SCALE;
         init_color_lut();
-        break;
-
-    // --- MODE_NORMAL: DEBUG ---
-    case SDL_EVENT_KEY_F(2):  // Linux version
-        debug_force_cache_thread_run = true;
         break;
     }
 
@@ -1091,7 +1117,6 @@ static void render_hndlr_help(pane_cx_t *pane_cx)
     #define SDL_EVENT_HELP_MOUSE_MOTION  (SDL_EVENT_USER_DEFINED + 0)
     #define SDL_EVENT_HELP_MOUSE_WHEEL   (SDL_EVENT_USER_DEFINED + 1)
     #define SDL_EVENT_HELP_BACK          (SDL_EVENT_USER_DEFINED + 2)
-//  #define SDL_EVENT_HELP_QUIT          (SDL_EVENT_USER_DEFINED + 3)
 
     // read help.txt, on first call
     if (f == NULL) {
@@ -1133,12 +1158,6 @@ static void render_hndlr_help(pane_cx_t *pane_cx)
     sdl_render_text_and_register_event(
             pane, x, y, FONTSZ_LARGE, "BACK ", SDL_LIGHT_BLUE, SDL_BLACK,
             SDL_EVENT_HELP_BACK, SDL_EVENT_TYPE_MOUSE_CLICK, pane_cx);
-
-//  x = pane->w-5*fcw;
-//  y = 0;
-//  sdl_render_text_and_register_event(
-//          pane, x, y, FONTSZ_LARGE, "QUIT ", SDL_LIGHT_BLUE, SDL_BLACK,
-//          SDL_EVENT_HELP_QUIT, SDL_EVENT_TYPE_MOUSE_CLICK, pane_cx);
 }
 
 static int event_hndlr_help(pane_cx_t *pane_cx, sdl_event_t *event)
@@ -1178,9 +1197,6 @@ static int event_hndlr_help(pane_cx_t *pane_cx, sdl_event_t *event)
     case SDL_EVENT_HELP_BACK:
         SET_DISPLAY(DISPLAY_MBS);
         break;
-//  case SDL_EVENT_HELP_QUIT:
-//      rc = PANE_HANDLER_RET_PANE_TERMINATE;
-//      break;
     }
 
     // ensure y_top is in range
