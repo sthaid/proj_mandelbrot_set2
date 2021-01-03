@@ -1,36 +1,26 @@
 // XXX
-// - stop caching when all data is the same
-// - test useability on phone
-// - display alert when saving a file,  and other times too
-// - make new files
-//   - add initial ctr to the first of files0
+// - make new files, add initial ctr to the first of files0
 // - fixup help text
-
-// xxx
-// - PASSWORDS
+// - fix QUIT, and rename PGM_EXIT, and move it somewhere else
+// - retest on phone
+// - make android icon
+// - publish to store
 // - define for 200
 
 // xxx
-// - when toggling full screen there is an initial pan jump
-// - fix QUIT, and rename PGM_EXIT, and move it somewhere else
-// - info and help text can be little larger
+// - PASSWORDS
 // - don't allow deleting the last file ?
-// - whay a delay here
+// - why a delay here
 //     01/01/21 08:08:30.121 INFO cache_file_copy_assets_to_internal_storage: asset files have ...
 //     01/01/21 08:08:32.294 INFO sdl_init: sdl_win_width=1700 sdl_win_height=900
+
+// xxx PROBABLY NOT
+// - info and help text can be little larger
+// - allow +/- 1 for all same determination
+// - when toggling full screen there is an initial pan jump
 // - ensure some of the key cmds are only allowed when in that mode
 
 // DONE
-// - move hide to corner
-//   - display alert at startup
-// - zoom may be too sensitive
-// - panning problem
-// - add startup alert or first time hidden alert about how to enable ctrls
-// - CLUT - + too close
-//   . too sensitive
-//   . wrong direction
-// - startup default in show mode
-// - find a way to select to ctr
 
 #include <common.h>
 
@@ -335,12 +325,13 @@ static unsigned int color_lut[65536];
 static bool         ctrls_hidden                 = true;
 static bool         display_info                 = false;
 static bool         debug_force_cache_thread_run = false;
+static int          save_file_ctrl               = 0;;
 
 static int          mode                         = MODE_SHOW;
 static bool         auto_zoom_in                 = true;
 static bool         auto_zoom_pause              = false;
 static uint64_t     slide_show_time_us           = 0;
-static int          slide_show_idx               = -1;
+static int          slide_show_idx               = 0;
 
 static void render_hndlr_mbs(pane_cx_t *pane_cx)
 {
@@ -411,6 +402,19 @@ static void render_hndlr_mbs(pane_cx_t *pane_cx)
         last_display_select_count = display_select_count;
     }
 
+    // if save file is requested then first show "SAVING FILE" alert,
+    // and on next iteration actually save the file
+    if (save_file_ctrl) {
+        if (save_file_ctrl > 10) {
+            set_alert(SDL_WHITE, "SAVING FILE");
+            save_file_ctrl -= 10;
+        } else {
+            save_file(save_file_ctrl);
+            set_alert(SDL_GREEN, save_file_ctrl == 1 ? "SAVE COMPLETE" : "SAVE-ZOOM COMPLETE");
+            save_file_ctrl = 0;
+        }
+    }
+
     // if mode is auto_zoom then increment or decrement the zoom,
     // when zoom limit is reached then reverse auto zoom direction
     if (mode == MODE_AUTOZ) {
@@ -431,7 +435,9 @@ static void render_hndlr_mbs(pane_cx_t *pane_cx)
         if ((max_file_info > 0) &&
             (microsec_timer() > slide_show_time_us + SLIDE_SHOW_INTVL_US)) 
         {
-            slide_show_idx = (slide_show_idx + 1) % max_file_info;
+            if (slide_show_time_us != 0) {
+                slide_show_idx = (slide_show_idx + 1) % max_file_info;
+            }
             show_file(slide_show_idx);
             slide_show_time_us = microsec_timer();
         }
@@ -492,7 +498,6 @@ static void render_hndlr_mbs(pane_cx_t *pane_cx)
         int xsz=300, ysz=200;
         rect_t loc = (rect_t){0, pane->h-ysz, xsz, ysz};
         sdl_register_event(pane, &loc, SDL_EVENT_MBS_HIDE, SDL_EVENT_TYPE_MOUSE_CLICK, pane_cx);
-        //sdl_render_fill_rect(pane, &loc, SDL_BLACK);  // xxx temp
         return;
     }
 
@@ -610,11 +615,8 @@ static void render_hndlr_mbs(pane_cx_t *pane_cx)
             sdl_render_line(pane, x+i, y, x+i, pane->h-1, FIRST_SDL_CUSTOM_COLOR);
         }
 
-        // xxx
-        spacing = ((pane->w - MBSVAL_IN_SET) - 14 * fcw) / 3;
-        // xxx INFO("spacing %d\n", spacing);
-
         // - SDL_EVENT_MBS_WVLEN_SCALE_MINUS event, " - "
+        spacing = ((pane->w - MBSVAL_IN_SET) - 14 * fcw) / 3;
         x += MBSVAL_IN_SET + fcw + spacing;
         y = (pane->h - height) + (height - fch) / 2;
         sdl_render_text_and_register_event(
@@ -709,19 +711,23 @@ static int event_hndlr_mbs(pane_cx_t *pane_cx, sdl_event_t *event)
         auto_zoom_pause = false;
         break;
     case SDL_EVENT_MBS_SHOW:
+        if (max_file_info == 0) {
+            break;
+        }
         mode = (mode == MODE_SHOW ? MODE_NORMAL : MODE_SHOW);
         slide_show_time_us = 0;
-        slide_show_idx = -1;
         break;
 
     // --- MODE_NORMAL: PAN & ZOOM ---
     case SDL_EVENT_MBS_MOUSE_MOTION_PAN: {
         double pixel_size = PIXEL_SIZE_AT_ZOOM0 * pow(2,-ZOOM_TOTAL);
         int dx, dy;
-        // xxx needs a comment
+        // if not the end of mouse motion then update ctr based on mouse_motion.delta_x/y;
+        // otherwise (when mouse_motion.end is set and there was no total motion) the
+        // ctr will be updated to be the location of the mouse
         if (!event->mouse_motion.end) {
             ctr += -(event->mouse_motion.delta_x * pixel_size * ((double)(CACHE_WIDTH - 200) / pane->w) ) +
-                -(event->mouse_motion.delta_y * pixel_size * ((double)(CACHE_HEIGHT - 200) / pane->h)) * I;
+                   -(event->mouse_motion.delta_y * pixel_size * ((double)(CACHE_HEIGHT - 200) / pane->h)) * I;
         } else {
             if (event->mouse_motion.end_abs_total_delta_x == 0 &&
                 event->mouse_motion.end_abs_total_delta_y == 0)
@@ -762,34 +768,7 @@ static int event_hndlr_mbs(pane_cx_t *pane_cx, sdl_event_t *event)
             zoom_step(-4);
         }
         break;
-
-    // --- MODE_NORMAL: FILES ---
-    case SDL_EVENT_MBS_FILES:
-        SET_DISPLAY(DISPLAY_DIRECTORY);
-        break;
-    case SDL_EVENT_MBS_SAVE:
-        save_file(1);
-        break;
-    case SDL_EVENT_MBS_SVZM:
-        save_file(2);
-        break;
-    case SDL_EVENT_MBS_NEXT:
-    case SDL_EVENT_MBS_PRIOR: {
-        static int idx = -1;
-        if (max_file_info == 0) {
-            break;
-        }
-        // xxx pick up where it left off
-        idx = idx + (event->event_id == SDL_EVENT_MBS_NEXT ? 1 : -1);
-        idx = (idx < 0 ? max_file_info-1 : idx >= max_file_info ? 0 : idx);
-        show_file(idx);
-        break; }
-
-    // --- MODE_NORMAL: MISC - LINUX VERSION ONLY ---
-    case SDL_EVENT_KEY_F(2):
-        debug_force_cache_thread_run = true;
-        break;
-    case 'r':  
+    case 'r':    // Linux version
         // reset to initial params
         ctr           = INITIAL_CTR;
         zoom          = INITIAL_ZOOM;
@@ -798,7 +777,7 @@ static int event_hndlr_mbs(pane_cx_t *pane_cx, sdl_event_t *event)
         wavelen_scale = INITIAL_WAVELEN_SCALE;
         init_color_lut();
         break;
-    case 'z':  
+    case 'z':    // Linux version
         // goto either fully zoomed in or out
         if (ZOOM_TOTAL >= cache_get_last_zoom()) {
             zoom = 0;
@@ -808,6 +787,28 @@ static int event_hndlr_mbs(pane_cx_t *pane_cx, sdl_event_t *event)
             zoom_fraction = 0;
         }
         break;
+
+    // --- MODE_NORMAL: FILES ---
+    case SDL_EVENT_MBS_FILES:
+        SET_DISPLAY(DISPLAY_DIRECTORY);
+        break;
+    case SDL_EVENT_MBS_SAVE:
+        save_file_ctrl = 11;
+        break;
+    case SDL_EVENT_MBS_SVZM:
+        save_file_ctrl = 12;
+        break;
+    case SDL_EVENT_MBS_NEXT:
+    case SDL_EVENT_MBS_PRIOR: {
+        if (max_file_info == 0) {
+            break;
+        }
+        slide_show_idx = slide_show_idx + (event->event_id == SDL_EVENT_MBS_NEXT ? 1 : -1);
+        slide_show_idx = (slide_show_idx < 0              ? max_file_info-1 : 
+                          slide_show_idx >= max_file_info ? 0 : 
+                                                            slide_show_idx);
+        show_file(slide_show_idx);
+        break; }
 
     // --- MODE_AUTOZ ---
     case SDL_EVENT_MBS_REV:
@@ -824,7 +825,7 @@ static int event_hndlr_mbs(pane_cx_t *pane_cx, sdl_event_t *event)
         int delta;
         if (event->event_id == SDL_EVENT_MBS_WVLEN_START) {
             static double static_delta;
-            static_delta += event->mouse_motion.delta_x / 8.;
+            static_delta += event->mouse_motion.delta_x / 4.;
             delta = static_delta;
             static_delta -= delta;
         } else {
@@ -846,28 +847,17 @@ static int event_hndlr_mbs(pane_cx_t *pane_cx, sdl_event_t *event)
         if (wavelen_scale > MAX_WAVELEN_SCALE) wavelen_scale = 0;
         init_color_lut();
         break; }
-
-    // xxx
-    // - add click to ctr, if possible    PROBABY NOT
-    // - add pinch zoom, maybe            MAYBE
-    // - review below, and add these too
-#if 0
-    // --- GENERAL ---
-    case 'R':  // reset color lookup table
-        wavelen_start = WAVELEN_START_DEFAULT;
-        wavelen_scale = WAVELEN_SCALE_DEFAULT;
+    case 'R':   // Linux version
+        // reset color lookup table
+        wavelen_start = INITIAL_WAVELEN_START;
+        wavelen_scale = INITIAL_WAVELEN_SCALE;
         init_color_lut();
         break;
 
-    // --- CENTER ---
-    case SDL_EVENT_CENTER: {
-        double pixel_size = PIXEL_SIZE_AT_ZOOM0 * pow(2,-ZOOM_TOTAL);
-        ctr += ((event->mouse_click.x - (pane->w/2)) * pixel_size) + 
-               ((event->mouse_click.y - (pane->h/2)) * pixel_size) * I;
-        break; }
-
-    // --- ZOOM ---
-#endif
+    // --- MODE_NORMAL: DEBUG ---
+    case SDL_EVENT_KEY_F(2):  // Linux version
+        debug_force_cache_thread_run = true;
+        break;
     }
 
     return rc;
@@ -889,16 +879,19 @@ static void zoom_step(int n)
             break;
         }
 
+        // when called with a large number of steps, like for SDL_EVENT_MBS_ZIN,
+        // this returns a ZOOM_TOTAL containing zero fraction; this integer zoom
+        // level has the most detailed display of the mbs
         if (fabs(z - nearbyint(z)) < 1e-6) {
             z = nearbyint(z);
-            break;  // xxx comment why
+            break;
         }
     }
 
     zoom = z;
     zoom_fraction = z - zoom;
 
-    INFO("z=%f zoom=%d  frac=%f\n", z, zoom, zoom_fraction);// xxx temp print
+    DEBUG("z=%f zoom=%d  frac=%f\n", z, zoom, zoom_fraction);
 }
 
 static void init_color_lut(void)
@@ -1007,10 +1000,6 @@ static int save_file(int file_type)
     unsigned short *mbsval;
     double          x, y, x_step, y_step, x_start, y_start;
 
-    // set alert
-    // xxx doesn't work
-    //set_alert(SDL_WHITE, "SAVING FILE");
-
     // init
     w = (CACHE_WIDTH - 200) *  pow(2, -zoom_fraction);
     h = (CACHE_HEIGHT - 200) *  pow(2, -zoom_fraction);
@@ -1054,9 +1043,6 @@ static int save_file(int file_type)
     // file header (cache_file_info_t); the call to cache_file_update adds the mbsvals for
     // either (when file_type==1) the current zoom level, or (when file_type==2) all zoom levels
     cache_file_update(idx, file_type);
-
-    // set completion alert
-    set_alert(SDL_GREEN, file_type == 1 ? "SAVE COMPLETE" : "SAVE-ZOOM COMPLETE");
 
     // return idx
     return idx;
@@ -1200,7 +1186,6 @@ static int event_hndlr_help(pane_cx_t *pane_cx, sdl_event_t *event)
 
 // - - - - - - - - -  PANE_HNDLR : DIRECTORY  - - - - - - - - - - - - -
 
-static bool init_request;
 static int  y_top_dir;
 
 #define CLEAR_ALL_FILE_INFO_SELECTED \
@@ -1239,12 +1224,10 @@ static void render_hndlr_directory(pane_cx_t *pane_cx)
     cols = (pane->w - 100) / DIR_PIXELS_WIDTH;
     if (cols <= 0) cols = 1;
 
-    // initialize, when this display has been selected, or
-    // when the init_request flag has been set (init_request is set when files are deleted)
-    if (display_select_count != last_display_select_count || init_request) {
+    // initialize, when this display has been selected
+    if (display_select_count != last_display_select_count) {
         CLEAR_ALL_FILE_INFO_SELECTED;
         y_top_dir = 0;
-        init_request = false;
         last_display_select_count = display_select_count;
     }
 
@@ -1365,6 +1348,7 @@ static int event_hndlr_directory(pane_cx_t *pane_cx, sdl_event_t *event)
     case SDL_EVENT_DIR_CHOICE...SDL_EVENT_DIR_CHOICE+1000:
         idx = event->event_id - SDL_EVENT_DIR_CHOICE;
         show_file(idx);
+        slide_show_idx = idx;
 
         CLEAR_ALL_FILE_INFO_SELECTED;
         SET_DISPLAY(DISPLAY_MBS);
@@ -1389,7 +1373,8 @@ static int event_hndlr_directory(pane_cx_t *pane_cx, sdl_event_t *event)
             break;
         }
         set_alert(SDL_GREEN, "%d FILE%s DELETED", cnt, cnt>1?"S":"");
-        init_request = true;
+        y_top_dir = 0;
+        slide_show_idx = 0;
         break;
 
     case SDL_EVENT_DIR_BACK:
