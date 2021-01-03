@@ -32,9 +32,38 @@
 #include <android/asset_manager_jni.h>
 #endif
 
-// -----------------  LOGMSG  --------------------------------------------
-
 bool debug_enabled;
+
+#ifndef ANDROID
+static char *linux_internal_storage_dirname;
+#endif
+
+// -----------------  INIT  ----------------------------------------------
+
+void util_misc_init(char *linux_internal_storage_dirname_arg)
+{
+#ifndef ANDROID
+    char tmp[300], *progdir;
+    int rc;
+
+    // save linux_internal_storage_dirname
+    linux_internal_storage_dirname = linux_internal_storage_dirname_arg;
+
+    // change working directory to the directory where the 
+    // program is being run from
+    if (readlink("/proc/self/exe", tmp, sizeof(tmp)) < 0) {
+        FATAL("readlink, %s\n", strerror(errno));
+    }
+    progdir = dirname(tmp);
+    rc = chdir(progdir);
+    INFO("chdir %s\n", progdir);
+    if (rc != 0) {
+        FATAL("failed chdir to %s, %s\n", progdir, strerror(errno));
+    }
+#endif
+}
+
+// -----------------  LOGMSG  --------------------------------------------
 
 #ifndef ANDROID
 void logmsg(char *lvl, const char *func, char *fmt, ...) 
@@ -130,7 +159,7 @@ void list_asset_files(char *location, int32_t *max, char ***pathnames)
     char            dirpath[300];
 
     sprintf(dirpath, "assets/%s", location);
-    INFO("dirpath %s\n", dirpath);
+    DEBUG("dirpath %s\n", dirpath);
 
     *max = 0;
     *pathnames = calloc(1000,sizeof(char*)); //xxx realloc if needed
@@ -153,12 +182,12 @@ void list_asset_files(char *location, int32_t *max, char ***pathnames)
         } else {
             sprintf(filename, "%s/%s", location, dirent->d_name);
         }
-        INFO("filename '%s'\n", filename);
+        DEBUG("filename '%s'\n", filename);
 
         sprintf(tmpfn, "assets/%s", filename);
         ret = stat(tmpfn, &buf);
         if (ret != 0 || !S_ISREG(buf.st_mode)) {
-            INFO("%s is not a regular file\n", tmpfn);
+            DEBUG("%s is not a regular file\n", tmpfn);
             continue;
         }
 
@@ -223,7 +252,7 @@ void list_asset_files(char *location, int32_t *max, char ***pathnames)
         } else {
             sprintf((*pathnames)[*max], "%s/%s", location, fn);
         }
-        INFO("got pathane %s\n", (*pathnames)[*max]);
+        DEBUG("got pathane %s\n", (*pathnames)[*max]);
         (*max)++;
     }
 
@@ -352,7 +381,7 @@ char *get_internal_storage_path(void)
     if (home_dir == NULL) {
         FATAL("env var HOME not set\n");
     }
-    sprintf(storage_path, "%s/%s", home_dir, ".mbs2");  // XXX  
+    sprintf(storage_path, "%s/%s", home_dir, linux_internal_storage_dirname);
     rc = mkdir(storage_path, 0755);
     if (rc < 0 && errno != EEXIST) {
         FATAL("failed to create %s, %s\n", storage_path, strerror(errno));

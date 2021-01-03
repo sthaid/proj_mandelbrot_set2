@@ -6,6 +6,10 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 
+// -----------------  INIT  --------------------------------------
+
+void util_misc_init(char *linux_internal_storage_dirname_arg);
+
 // -----------------  GENERAL  -----------------------------------
 
 // show the value of a define

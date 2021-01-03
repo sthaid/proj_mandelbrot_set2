@@ -6,6 +6,7 @@
 // - make android icon
 // - publish to store
 // - define for 200
+// - marked xxx issued
 
 // xxx
 // - PASSWORDS
@@ -98,6 +99,10 @@ int main(int argc, char **argv)
 
     // debug print program startup
     INFO("program starting\n");
+
+    // initialize util_misc, provide the linux internal storage dirname,
+    // a subdir of $HOME on Linux (n/a for Android)
+    util_misc_init(".mbs2");
 
     // get options (Linux verion only)
     // -c ctr_a,ctr_b,zoom,zoom_fraction,wavelen_start,wavelen_scale,file_type

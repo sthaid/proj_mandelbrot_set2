@@ -180,7 +180,7 @@ void cache_param_change(complex_t ctr, int zoom, bool force)
     // assuming cache_last_zoom is the maximum
     if (ctr != cache_ctr) {
         cache_last_zoom = MAX_ZOOM-1;
-        INFO("cache last zoom = %d\n", cache_last_zoom);
+        DEBUG("cache last zoom = %d\n", cache_last_zoom);
     }
 
     // update cache_ctr, cache_zoom
@@ -307,7 +307,7 @@ static void cache_file_init(void)
 
 static void cache_file_copy_assets_to_internal_storage(void)
 {
-    int32_t max, i, fd, len;
+    int32_t max, i, fd, len, copy_count;
     char **pathnames;
     asset_file_t *f;
     char internal_storage_pathname[300];
@@ -346,13 +346,14 @@ static void cache_file_copy_assets_to_internal_storage(void)
 
     // loop over the list of files, and copy those whose names are mbs2_nnnn.dat to
     // internal storage
+    copy_count = 0;
     for (i = 0; i < max; i++) {
         if (strstr(pathnames[i], "mbs2_") == NULL || strstr(pathnames[i], ".dat") == NULL) {
             continue;
         }
 
         sprintf(internal_storage_pathname, "%s/%s", cache_dir, basename(pathnames[i]));
-        INFO("copying asset file %s to %s\n", pathnames[i], internal_storage_pathname);
+        DEBUG("copying asset file %s to %s\n", pathnames[i], internal_storage_pathname);
 
         f = read_asset_file(pathnames[i]);
         if (f == NULL) {
@@ -371,7 +372,10 @@ static void cache_file_copy_assets_to_internal_storage(void)
         close(fd);
 
         read_asset_file_free(f);
+
+        copy_count++;
     }
+    INFO("copied %d asset files to %s\n", copy_count, internal_storage_pathname);
 
     // free memory that was allocated by list_asset_files
     list_asset_files_free(max, pathnames);
@@ -510,7 +514,7 @@ void cache_file_read(int idx)
         if (compressed_mbsval_data == NULL) {
             FATAL("malloc %d failed\n", ffce.compressed_mbsval_datalen);
         }
-        INFO("comp datalen = %d\n", ffce.compressed_mbsval_datalen);
+        DEBUG("comp datalen = %d\n", ffce.compressed_mbsval_datalen);
 
         // - read the compressed_mbsval_data
         READ(fi->file_name, fd, compressed_mbsval_data, ffce.compressed_mbsval_datalen);
@@ -738,7 +742,7 @@ static void *cache_thread(void *cx)
 restart:
         // debug print the completion status
         if (start_us != 0) {
-            INFO("%s  mbs_calc_count=%d,%d  duration=%.3f secs\n",
+            DEBUG("%s  mbs_calc_count=%d,%d  duration=%.3f secs\n",
                  !was_stopped ? "DONE" : "STOPPED",
                  mbs_calc_count,
                  mbs_not_calc_count,
@@ -951,6 +955,7 @@ static void cache_mbsval_all_same_optimization(int lvl_arg)
     // in mbs2.c to limit zoom in 
     __sync_synchronize();
     cache_last_zoom = lvl_arg;
+    DEBUG("cache last zoom = %d\n", cache_last_zoom);
 }
 
 static void cache_spiral_init(spiral_t *s, int x, int y)
