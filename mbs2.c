@@ -327,12 +327,12 @@ static int          wavelen_start                = INITIAL_WAVELEN_START;
 static int          wavelen_scale                = INITIAL_WAVELEN_SCALE;
 static unsigned int color_lut[65536];
 
-static bool         ctrls_hidden                 = true;
+static bool         ctrls_hidden                 = false;
 static bool         display_info                 = false;
 static bool         debug_force_cache_thread_run = false;
 static int          save_file_ctrl               = 0;;
 
-static int          mode                         = MODE_SHOW;
+static int          mode                         = MODE_NORMAL;
 static bool         auto_zoom_in                 = true;
 static bool         auto_zoom_pause              = false;
 static uint64_t     slide_show_time_us           = 0;
@@ -396,9 +396,6 @@ static void render_hndlr_mbs(pane_cx_t *pane_cx)
         // this would normally be done by the above call to show_file, except
         //  when max_file_info is zero
         init_color_lut();
-
-        // set startup alert
-        set_alert(SDL_WHITE, "TAP BOTTOM LEFT FOR CTRLS");
     }
 
     // if re-entering mbs display then 
@@ -703,9 +700,14 @@ static int event_hndlr_mbs(pane_cx_t *pane_cx, sdl_event_t *event)
     case SDL_EVENT_MBS_INFO:
         display_info = !display_info;
         break;
-    case SDL_EVENT_MBS_HIDE:
+    case SDL_EVENT_MBS_HIDE: {
+        static bool once = true;
+        if (once) {
+            set_alert(SDL_WHITE, "TAP BOTTOM LEFT FOR CTRLS");
+            once = false;
+        }
         ctrls_hidden = !ctrls_hidden;
-        break;
+        break; }
 
     // --- MODE SELECT ---
     case SDL_EVENT_MBS_CLUT:
@@ -1089,7 +1091,7 @@ static void render_hndlr_help(pane_cx_t *pane_cx)
     #define SDL_EVENT_HELP_MOUSE_MOTION  (SDL_EVENT_USER_DEFINED + 0)
     #define SDL_EVENT_HELP_MOUSE_WHEEL   (SDL_EVENT_USER_DEFINED + 1)
     #define SDL_EVENT_HELP_BACK          (SDL_EVENT_USER_DEFINED + 2)
-    #define SDL_EVENT_HELP_QUIT          (SDL_EVENT_USER_DEFINED + 3)
+//  #define SDL_EVENT_HELP_QUIT          (SDL_EVENT_USER_DEFINED + 3)
 
     // read help.txt, on first call
     if (f == NULL) {
@@ -1132,11 +1134,11 @@ static void render_hndlr_help(pane_cx_t *pane_cx)
             pane, x, y, FONTSZ_LARGE, "BACK ", SDL_LIGHT_BLUE, SDL_BLACK,
             SDL_EVENT_HELP_BACK, SDL_EVENT_TYPE_MOUSE_CLICK, pane_cx);
 
-    x = pane->w-5*fcw;
-    y = 0;
-    sdl_render_text_and_register_event(
-            pane, x, y, FONTSZ_LARGE, "QUIT ", SDL_LIGHT_BLUE, SDL_BLACK,
-            SDL_EVENT_HELP_QUIT, SDL_EVENT_TYPE_MOUSE_CLICK, pane_cx);
+//  x = pane->w-5*fcw;
+//  y = 0;
+//  sdl_render_text_and_register_event(
+//          pane, x, y, FONTSZ_LARGE, "QUIT ", SDL_LIGHT_BLUE, SDL_BLACK,
+//          SDL_EVENT_HELP_QUIT, SDL_EVENT_TYPE_MOUSE_CLICK, pane_cx);
 }
 
 static int event_hndlr_help(pane_cx_t *pane_cx, sdl_event_t *event)
@@ -1176,9 +1178,9 @@ static int event_hndlr_help(pane_cx_t *pane_cx, sdl_event_t *event)
     case SDL_EVENT_HELP_BACK:
         SET_DISPLAY(DISPLAY_MBS);
         break;
-    case SDL_EVENT_HELP_QUIT:
-        rc = PANE_HANDLER_RET_PANE_TERMINATE;
-        break;
+//  case SDL_EVENT_HELP_QUIT:
+//      rc = PANE_HANDLER_RET_PANE_TERMINATE;
+//      break;
     }
 
     // ensure y_top is in range

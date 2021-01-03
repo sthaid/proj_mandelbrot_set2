@@ -38,7 +38,6 @@
 #define MAX_EVENT_REG_TBL     1000
 #define MAX_SDL_COLOR_TO_RGBA 1000
 
-// xxx maybe it should run from assets dir
 #ifndef ANDROID
 #define FONT_PATH "assets/fonts/FreeMonoBold.ttf"
 #else
