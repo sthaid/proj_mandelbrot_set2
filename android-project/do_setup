@@ -58,14 +58,11 @@ cd $SDL_DIR
 patch -p1 < $TOP/setup_files/setup.patch
 echo
 
-echo XXX DONE FOR NOW
-exit
-
 # create the launcher icon
 echo "Creating launcher icons"
 cd $TOP/setup_files
 RES_PATH=$BUILD/app/src/main/res
-gcc -Wall -g `sdl2-config --cflags` -lSDL2 -lSDL2_ttf -lpng -o create_ic_launcher create_ic_launcher.c
+gcc -Wall -g `sdl2-config --cflags` -lSDL2 -lSDL2_ttf -lpng -lm -o create_ic_launcher create_ic_launcher.c
 ./create_ic_launcher  $RES_PATH/mipmap-mdpi/ic_launcher.png      48
 ./create_ic_launcher  $RES_PATH/mipmap-hdpi/ic_launcher.png      72
 ./create_ic_launcher  $RES_PATH/mipmap-xhdpi/ic_launcher.png     96
