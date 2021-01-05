@@ -25,7 +25,6 @@
 
 #include <util_misc.h>
 
-// xxx also in util
 // long is not portable between Linux and Android
 #define long DO_NOT_USE_LONG
 
