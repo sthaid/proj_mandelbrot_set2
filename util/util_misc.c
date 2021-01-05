@@ -277,7 +277,7 @@ void list_asset_files_free(int32_t max, char **pathnames)
 
 asset_file_t * read_asset_file(char * pathname_arg)
 {
-    #define MAX_BUFF  20000000  //xxx check for overflow
+    #define MAX_BUFF  50000000  //xxx this may not be large enough for some files
 
     asset_file_t * f = NULL;
     void         * buff;
@@ -311,6 +311,8 @@ asset_file_t * read_asset_file(char * pathname_arg)
     }
 
     SDL_RWclose(rw);
+
+    buff = realloc(buff, len);
 
     f->buff = buff;
     f->len = len;
