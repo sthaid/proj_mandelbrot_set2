@@ -1,6 +1,6 @@
 // build and run example:
 //
-// gcc -Wall -g `sdl2-config --cflags` -lSDL2 -lSDL2_ttf -lpng -o create_ic_launcher create_ic_launcher.c
+// gcc -Wall -g `sdl2-config --cflags` -lSDL2 -lSDL2_ttf -lpng -lm -o create_ic_launcher create_ic_launcher.c
 // ./create_ic_launcher icon.png 512
 
 #include <stdio.h>
@@ -10,6 +10,7 @@
 #include <unistd.h>
 #include <string.h>
 #include <libgen.h>
+#include <complex.h>
 #include <sys/types.h>
 #include <sys/stat.h>
 
@@ -26,32 +27,55 @@
 #define MIN_WIDTH  42
 
 // colors
-#define PURPLE     0 
-#define BLUE       1
-#define LIGHT_BLUE 2
-#define GREEN      3
-#define YELLOW     4
-#define ORANGE     5
-#define RED        6
-#define GRAY       7
-#define PINK       8
-#define WHITE      9
-#define BLACK      10
-#define MAX_COLOR  11
+#define SDL_PURPLE     0 
+#define SDL_BLUE       1
+#define SDL_LIGHT_BLUE 2
+#define SDL_GREEN      3
+#define SDL_YELLOW     4
+#define SDL_ORANGE     5
+#define SDL_PINK       6
+#define SDL_RED        7
+#define SDL_GRAY       8
+#define SDL_WHITE      9
+#define SDL_BLACK      10
 
-uint sdl_pixel_rgba[] = {
-    //    red           green          blue    alpha
-       (127 << 24) |               (255 << 8) | 255,     // PURPLE
-                                   (255 << 8) | 255,     // BLUE
-                     (255 << 16) | (255 << 8) | 255,     // LIGHT_BLUE
-                     (255 << 16)              | 255,     // GREEN
-       (255 << 24) | (255 << 16)              | 255,     // YELLOW
-       (255 << 24) | (128 << 16)              | 255,     // ORANGE
-       (255 << 24)                            | 255,     // RED         
-       (224 << 24) | (224 << 16) | (224 << 8) | 255,     // GRAY        
-       (255 << 24) | (105 << 16) | (180 << 8) | 255,     // PINK 
-       (255 << 24) | (255 << 16) | (255 << 8) | 255,     // WHITE       
-       (  0 << 24) | (  0 << 16) | (  0 << 8) | 255,     // WHITE       
+// pixels
+#define BYTES_PER_PIXEL  4
+#define PIXEL(r,g,b)     (((r) << 0) | ((g) << 8) | ((b) << 16) | (255 << 24))
+#define PIXEL_PURPLE     PIXEL(127,0,255)
+#define PIXEL_BLUE       PIXEL(0,0,255)
+#define PIXEL_LIGHT_BLUE PIXEL(0,255,255)
+#define PIXEL_GREEN      PIXEL(0,255,0)
+#define PIXEL_YELLOW     PIXEL(255,255,0)
+#define PIXEL_ORANGE     PIXEL(255,128,0)
+#define PIXEL_PINK       PIXEL(255,105,180)
+#define PIXEL_RED        PIXEL(255,0,0)
+#define PIXEL_GRAY       PIXEL(224,224,224)
+#define PIXEL_WHITE      PIXEL(255,255,255)
+#define PIXEL_BLACK      PIXEL(0,0,0)
+
+#define PIXEL_TO_RGB(p,r,g,b) \
+    do { \
+        r = ((p) >>  0) & 0xff; \
+        g = ((p) >>  8) & 0xff; \
+        b = ((p) >> 16) & 0xff; \
+    } while (0)
+
+#define MAX_SDL_COLOR_TO_RGBA  100
+#define FIRST_SDL_CUSTOM_COLOR 20
+
+static uint32_t sdl_color_to_rgba[MAX_SDL_COLOR_TO_RGBA] = {
+                            PIXEL_PURPLE,
+                            PIXEL_BLUE,
+                            PIXEL_LIGHT_BLUE,
+                            PIXEL_GREEN,
+                            PIXEL_YELLOW,
+                            PIXEL_ORANGE,
+                            PIXEL_PINK,
+                            PIXEL_RED,
+                            PIXEL_GRAY,
+                            PIXEL_WHITE,
+                            PIXEL_BLACK,
                                         };
 
 // variables
@@ -65,23 +89,165 @@ void usage(char * progname);
 TTF_Font *sdl_create_font(int font_ptsize);
 void sdl_render_text(TTF_Font *font, int x, int y, int fg_color, int bg_color, char *str);
 void sdl_set_color(int color);
+void sdl_define_custom_color(int32_t color, uint8_t r, uint8_t g, uint8_t b);
 void sdl_render_fill_rect(SDL_Rect *rect, int color);
 void sdl_render_rect(SDL_Rect * rect_arg, int line_width, int color);
 void sdl_render_circle(int x, int y, int r, int color);
+void sdl_render_point(int x, int y, int color);
 void write_png_file(char* file_name, int width, int height, void * pixels, int pitch);
 
 // -----------------  DRAW YOUR LAUNCHER HERE  -----------------------------
 
+// defines
+#define MBSVAL_IN_SET 1000
+#define WAVELEN_FIRST 400
+#define WAVELEN_LAST  700
+
+// variables
+unsigned int color_lut[65536];
+int wavelen_start, wavelen_scale;
+
+// prototypes
+int mandelbrot_set(double complex c);
+void init_color_lut(void);
+void sdl_wavelen_to_rgb(double wavelength, uint8_t *r, uint8_t *g, uint8_t *b);
+
+// code ...
 void draw_launcher(int width, int height)
 {
-    SDL_Rect rect = {0,0,width,height};
-    TTF_Font *font;
+    double complex c, center;
+    int idxa, idxb;
+    unsigned short mbsval;
+    unsigned int pixel;
+    uint8_t r,g,b;
+    double pixel_size;
 
-    font = sdl_create_font(height);
+    // params
+    wavelen_start = 425;
+    wavelen_scale = 8;
+    pixel_size    = 2. / width;
+    center        = (-0.50 + 0.0*I);
 
-    sdl_render_fill_rect(&rect, GREEN);
-    sdl_render_text(font, width*.2, 0, BLACK, GREEN, "R");
-    sdl_render_rect(&rect, 2, BLACK);
+    // initialize the color lookup table
+    init_color_lut();
+
+    // loop over the pixel coords:
+    // - compute mandelbrot set value
+    // - convert mbs value to pixel
+    // - draw the pixel
+    for (idxa = 0; idxa < width; idxa++) {
+        for (idxb = 0; idxb < height; idxb++) {
+            c = ((idxa - width/2) * pixel_size - (idxb - height/2) * pixel_size * I) + center;
+            mbsval = mandelbrot_set(c);
+
+            pixel = color_lut[mbsval];
+            PIXEL_TO_RGB(pixel, r,g,b);
+
+            sdl_define_custom_color(20, r,g,b);
+            sdl_render_point(idxa, idxb, 20);
+        }
+    }
+}
+
+int mandelbrot_set(double complex c)
+{
+    double complex z = 0;
+    double  abs_za, abs_zb;
+    int     mbsval;
+
+    for (mbsval = 0; mbsval < MBSVAL_IN_SET; mbsval++) {
+        z = z * z + c;
+
+        abs_za = fabs(creal(z));
+        abs_zb = fabs(cimag(z));
+        if (abs_za < M_SQRT2 && abs_zb < M_SQRT2) {
+            continue;
+        } else if (abs_za >= 2 || abs_zb >= 2) {
+            break;
+        } else if (abs_za*abs_za + abs_zb*abs_zb >= 4) {
+            break;
+        }
+    }
+
+    return mbsval;
+}
+
+void init_color_lut(void)
+{
+    int           i;
+    unsigned char r,g,b;
+    double        wavelen;
+    double        wavelen_step;
+
+    color_lut[65535]         = PIXEL_BLUE;
+    color_lut[MBSVAL_IN_SET] = PIXEL_BLACK;
+
+    if (wavelen_scale == 0) {
+        // black and white
+        for (i = 0; i < MBSVAL_IN_SET; i++) {
+            color_lut[i] = PIXEL_WHITE;
+        }
+    } else {
+        // color
+        wavelen_step  = (double)(WAVELEN_LAST-WAVELEN_FIRST) / (MBSVAL_IN_SET-1) * wavelen_scale;
+        wavelen = wavelen_start;
+        for (i = 0; i < MBSVAL_IN_SET; i++) {
+            sdl_wavelen_to_rgb(wavelen, &r, &g, &b);
+            color_lut[i] = PIXEL(r,g,b);
+            wavelen += wavelen_step;
+            if (wavelen > WAVELEN_LAST+.01) {
+                wavelen = WAVELEN_FIRST;
+            }
+        }
+    }
+}
+
+// ported from http://www.noah.org/wiki/Wavelength_to_RGB_in_Python
+void sdl_wavelen_to_rgb(double wavelength, uint8_t *r, uint8_t *g, uint8_t *b)
+{
+    double attenuation;
+    double gamma = 0.8;
+    double R,G,B;
+
+    if (wavelength >= 380 && wavelength <= 440) {
+        double attenuation = 0.3 + 0.7 * (wavelength - 380) / (440 - 380);
+        R = pow((-(wavelength - 440) / (440 - 380)) * attenuation, gamma);
+        G = 0.0;
+        B = pow(1.0 * attenuation, gamma);
+    } else if (wavelength >= 440 && wavelength <= 490) {
+        R = 0.0;
+        G = pow((wavelength - 440) / (490 - 440), gamma);
+        B = 1.0;
+    } else if (wavelength >= 490 && wavelength <= 510) {
+        R = 0.0;
+        G = 1.0;
+        B = pow(-(wavelength - 510) / (510 - 490), gamma);
+    } else if (wavelength >= 510 && wavelength <= 580) {
+        R = pow((wavelength - 510) / (580 - 510), gamma);
+        G = 1.0;
+        B = 0.0;
+    } else if (wavelength >= 580 && wavelength <= 645) {
+        R = 1.0;
+        G = pow(-(wavelength - 645) / (645 - 580), gamma);
+        B = 0.0;
+    } else if (wavelength >= 645 && wavelength <= 750) {
+        attenuation = 0.3 + 0.7 * (750 - wavelength) / (750 - 645);
+        R = pow(1.0 * attenuation, gamma);
+        G = 0.0;
+        B = 0.0;
+    } else {
+        R = 0.0;
+        G = 0.0;
+        B = 0.0;
+    }
+
+    if (R < 0) R = 0; else if (R > 1) R = 1;
+    if (G < 0) G = 0; else if (G > 1) G = 1;
+    if (B < 0) B = 0; else if (B > 1) B = 1;
+
+    *r = R * 255;
+    *g = G * 255;
+    *b = B * 255;
 }
 
 // -----------------  MAIN  ------------------------------------------------
@@ -206,13 +372,13 @@ void sdl_render_text(TTF_Font *font, int x, int y, int fg_color, int bg_color, c
     SDL_Color    fg_sdl_color;
     SDL_Color    bg_sdl_color;
 
-    fg_rgba = sdl_pixel_rgba[fg_color];
+    fg_rgba = sdl_color_to_rgba[fg_color];
     fg_sdl_color.r = (fg_rgba >> 24) & 0xff;
     fg_sdl_color.g = (fg_rgba >> 16) & 0xff;
     fg_sdl_color.b = (fg_rgba >>  8) & 0xff;
     fg_sdl_color.a = (fg_rgba >>  0) & 0xff;
 
-    bg_rgba = sdl_pixel_rgba[bg_color];
+    bg_rgba = sdl_color_to_rgba[bg_color];
     bg_sdl_color.r = (bg_rgba >> 24) & 0xff;
     bg_sdl_color.g = (bg_rgba >> 16) & 0xff;
     bg_sdl_color.b = (bg_rgba >>  8) & 0xff;
@@ -229,15 +395,34 @@ void sdl_render_text(TTF_Font *font, int x, int y, int fg_color, int bg_color, c
     SDL_DestroyTexture(texture);
 }
 
-void sdl_set_color(int color)
+void sdl_set_color(int32_t color)
 {
-    unsigned int rgba = sdl_pixel_rgba[color];
-    unsigned int r = (rgba >> 24) & 0xff;
-    unsigned int g = (rgba >> 16) & 0xff;
-    unsigned int b = (rgba >>  8) & 0xff;
-    unsigned int a = (rgba      ) & 0xff;
+    uint8_t r, g, b, a;
+    uint32_t rgba;
+
+    if (color < 0 || color >= MAX_SDL_COLOR_TO_RGBA) {
+        printf("ERROR color %d out of range\n", color);
+        exit(1);
+    }
+
+    rgba = sdl_color_to_rgba[color];
+
+    r = (rgba >>  0) & 0xff;
+    g = (rgba >>  8) & 0xff;
+    b = (rgba >> 16) & 0xff;
+    a = (rgba >> 24) & 0xff;
 
     SDL_SetRenderDrawColor(sdl_renderer, r, g, b, a);
+}
+
+void sdl_define_custom_color(int32_t color, uint8_t r, uint8_t g, uint8_t b)
+{
+    if (color < FIRST_SDL_CUSTOM_COLOR || color >= MAX_SDL_COLOR_TO_RGBA) {
+        printf("ERROR color %d out of range\n", color);
+        exit(1);
+    }
+
+    sdl_color_to_rgba[color] = (r << 0) | ( g << 8) | (b << 16) | (0xff << 24);
 }
 
 void sdl_render_fill_rect(SDL_Rect *rect, int color)
@@ -293,6 +478,12 @@ void sdl_render_circle(int x_ctr, int y_ctr, int radius, int color)
             radiusError += 2 * (y - x) + 1;
         }
     }
+}
+
+void sdl_render_point(int x, int y, int color)
+{
+    sdl_set_color(color);
+    SDL_RenderDrawPoint(sdl_renderer, x, y);
 }
 
 void write_png_file(char* file_name, int width, int height, void * pixels, int pitch)
