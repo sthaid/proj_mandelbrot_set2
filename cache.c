@@ -270,14 +270,13 @@ static void cache_file_init(void)
     closedir(d);
     qsort(file_num_array, max_file, sizeof(int), compare);
 
-    // make available max_file_info and last_file_num
+    // make available last_file_num
     last_file_num = (max_file > 0 ? file_num_array[max_file-1] : -1);
-    max_file_info = max_file;
 
     // read each file's header, which is a cache_file_info_t, and
     // store it in the global file_info array
-    // xxx should this be tolerant of bad files?
-    for (idx = 0; idx < max_file_info; idx++) {
+    max_file_info = 0;
+    for (idx = 0; idx < max_file; idx++) {
         char fn[100];
         cache_file_info_t *fi;
         int fd, len;
@@ -287,29 +286,42 @@ static void cache_file_init(void)
         fi = calloc(1,sizeof(cache_file_info_t));
         fd = open(PATHNAME(fn), O_RDONLY);
         if (fd < 0) {
-            FATAL("open %s, %s\n", fn, strerror(errno));
+            ERROR("open %s, %s\n", fn, strerror(errno));
+            free(fi);
+            continue;
         }
         len = read(fd, fi, sizeof(cache_file_info_t));
         if (len != sizeof(cache_file_info_t)) {
-            FATAL("read %s, %s, req=%zd act=%d\n", fn, strerror(errno), sizeof(cache_file_info_t), len);
+            ERROR("read %s, %s, req=%zd act=%d\n", fn, strerror(errno), sizeof(cache_file_info_t), len);
+            close(fd);
+            free(fi);
+            continue;
         }
         close(fd);
-        file_info[idx] = fi;
 
         // sanity checks on the cache_file_info just read
         if (fi->magic != MAGIC_MBS_FILE) {
-            FATAL("file %s invalid magic 0x%" PRIx64 "\n", fn, fi->magic);
+            ERROR("file %s invalid magic 0x%" PRIx64 "\n", fn, fi->magic);
+            free(fi);
+            continue;
         }
         if (strcmp(fi->file_name, fn) != 0) {
-            FATAL("file %s invalid file_name %s\n", fn, fi->file_name);
+            ERROR("file %s invalid file_name %s\n", fn, fi->file_name);
+            free(fi);
+            continue;
         }
         if (fi->file_type < 0 || fi->file_type > 2) {
-            FATAL("file %s invald type=%d\n", fn, fi->file_type);
+            ERROR("file %s invald type=%d\n", fn, fi->file_type);
+            free(fi);
+            continue;
         }
+
+        // the file is okay, save it in file_info array
+        file_info[max_file_info++] = fi;
     }
 
     // debug print file_info
-    DEBUG("max_file_info=%d last_file_num=%d\n", max_file_info, last_file_num);
+    INFO("max_file_info=%d last_file_num=%d\n", max_file_info, last_file_num);
     for (idx = 0; idx < max_file_info; idx++) {
         cache_file_info_t *fi = file_info[idx];
         DEBUG("idx=%d name=%s type=%d\n", idx, fi->file_name, fi->file_type);
@@ -925,7 +937,6 @@ static void cache_thread_issue_request(int req)
     }
 }
 
-// xxx maybe allow small variation
 static void cache_mbsval_all_same_optimization(int lvl_arg)
 {
     cache_t *cp;
