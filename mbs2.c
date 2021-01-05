@@ -1,6 +1,8 @@
 // XXX
+// - F2 not working
+// - F3 to print out current settings to make a file with later
+
 // - make new files, add initial ctr to the first of files0
-// - fix QUIT, and rename PGM_EXIT, and move it somewhere else
 // - retest on phone
 // - make android icon
 // - publish to store
@@ -20,6 +22,7 @@
 
 // DONE
 // - fixup help text
+// - fix QUIT, and rename PGM_EXIT, and move it somewhere else
 
 #include <common.h>
 
@@ -716,6 +719,16 @@ static int event_hndlr_mbs(pane_cx_t *pane_cx, sdl_event_t *event)
     case SDL_EVENT_KEY_F(2):  // Linux version
         debug_force_cache_thread_run = true;
         break;
+    case SDL_EVENT_KEY_F(3): {  // Linux version
+        int i;
+        for (i = 0; i < max_file_info; i++) {
+            cache_file_info_t *fi = file_info[i];
+            INFO("-c %.18f,%.18f,%d,%.3f,%d,%d,2\n",
+                 creal(fi->ctr), cimag(fi->ctr), 
+                 fi->zoom, fi->zoom_fraction, 
+                 fi->wavelen_start, fi->wavelen_scale);
+        }
+        break; }
 
     // --- GOTO HELP DISPLAY ---
     case SDL_EVENT_MBS_HELP:

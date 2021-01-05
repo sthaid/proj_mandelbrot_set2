@@ -168,6 +168,8 @@ void cache_init(void)
 
 void cache_param_change(complex_t ctr, int zoom, bool force)
 {
+    int z;
+
     // if zoom, ctr remain the same then return
     if (zoom == cache_zoom && ctr == cache_ctr && force == false) {
         return;
@@ -175,6 +177,15 @@ void cache_param_change(complex_t ctr, int zoom, bool force)
 
     // stop the cache_thread
     cache_thread_issue_request(CACHE_THREAD_REQUEST_STOP);
+
+    // reset all spirals when force flag is set
+    if (force) {
+        for (z = 0; z < MAX_ZOOM; z++) {
+            cache_t *cp = &cache[z];
+            cp->spiral      = cache_initial_spiral;
+            cp->spiral_done = false;
+        }
+    }
 
     // if the cache_ctr is being changed then start by
     // assuming cache_last_zoom is the maximum
@@ -804,7 +815,7 @@ restart:
             // are consistent with the new cache center
             //
             // note that the cache_adjust_mbsval_ctr routine will reset the 
-            // spirals if an adjustment was made
+            // spiral if an adjustment was made
             DEBUG("starting: idx=%d lvl=%d\n", n, zoom_lvl_tbl[n]);
             cache_thread_percent_done = 100 * n / MAX_ZOOM;
             cp = &cache[ zoom_lvl_tbl[n] ];
