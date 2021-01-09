@@ -1,29 +1,3 @@
-// XXX
-// - F2 not working
-// - F3 to print out current settings to make a file with later
-
-// - make new files, add initial ctr to the first of files0
-// - retest on phone
-// - make android icon
-// - publish to store
-// - define for 200
-// - marked xxx issued
-// - PASSWORDS
-// - don't allow deleting the last file ?
-
-// xxx PROBABLY NOT
-// - info and help text can be little larger
-// - allow +/- 1 for all same determination
-// - when toggling full screen there is an initial pan jump
-// - ensure some of the key cmds are only allowed when in that mode
-// - why a delay here
-//     01/01/21 08:08:30.121 INFO cache_file_copy_assets_to_internal_storage: asset files have ...
-//     01/01/21 08:08:32.294 INFO sdl_init: sdl_win_width=1700 sdl_win_height=900
-
-// DONE
-// - fixup help text
-// - fix QUIT, and rename PGM_EXIT, and move it somewhere else
-
 #include <common.h>
 
 #include <util_sdl.h>
@@ -81,7 +55,6 @@ static void zoom_step(int n);
 static void init_color_lut(void);
 static void display_info_proc(rect_t *pane);
 static void create_file(char *params);
-static int save_file(int file_type);
 static void show_file(int idx);
 
 static void render_hndlr_help(pane_cx_t *pane_cx);
@@ -127,7 +100,7 @@ int main(int argc, char **argv)
     }
 
     // initialize the caching code
-    cache_init();
+    cache_init(INITIAL_CTR);
 
     // create the file specified by the '-c' option, and exit
     if (create_file_param[0] != '\0') {
@@ -331,9 +304,10 @@ static unsigned int color_lut[65536];
 static bool         ctrls_hidden                 = false;
 static bool         display_info                 = false;
 static bool         debug_force_cache_thread_run = false;
-static int          save_file_ctrl               = 0;;
+static bool         tap_for_ctrls_alert_needed   = true;
+static int          save_file_ctrl               = 0;
 
-static int          mode                         = MODE_NORMAL;
+static int          mode                         = MODE_SHOW; // or use MODE_NORMAL here
 static bool         auto_zoom_in                 = true;
 static bool         auto_zoom_pause              = false;
 static uint64_t     slide_show_time_us           = 0;
@@ -398,6 +372,17 @@ static void render_hndlr_mbs(pane_cx_t *pane_cx)
         // this would normally be done by the above call to show_file, except
         //  when max_file_info is zero
         init_color_lut();
+
+        // if starting in slide show mode then display the 
+        // tap_for_ctrls_alert when pgm is starting, and hide ctrls
+        if (mode == MODE_SHOW) {
+            set_alert(SDL_WHITE, "TAP BOTTOM LEFT FOR CTRLS");
+            tap_for_ctrls_alert_needed = false;
+            ctrls_hidden = true;
+            if (max_file_info == 0) {
+                mode = MODE_NORMAL;
+            }
+        }
     }
 
     // if re-entering mbs display then 
@@ -408,48 +393,56 @@ static void render_hndlr_mbs(pane_cx_t *pane_cx)
 
     // if save file is requested then first show "SAVING FILE" alert,
     // and on next iteration actually save the file
-    if (save_file_ctrl) {
+    if (save_file_ctrl != 0) {
         if (save_file_ctrl > 10) {
             set_alert(SDL_WHITE, "SAVING FILE");
             save_file_ctrl -= 10;
         } else {
-            save_file(save_file_ctrl);
+            int file_type = save_file_ctrl;
+            cache_file_create(zoom_fraction, wavelen_start, wavelen_scale, file_type, color_lut);
             set_alert(SDL_GREEN, save_file_ctrl == 1 ? "SAVE COMPLETE" : "SAVE-ZOOM COMPLETE");
             save_file_ctrl = 0;
         }
     }
 
-    // if mode is auto_zoom then increment or decrement the zoom,
-    // when zoom limit is reached then reverse auto zoom direction
-    if (mode == MODE_AUTOZ) {
-        if (!auto_zoom_pause) {
-            zoom_step(auto_zoom_in ? 4 : -4);
-            if (ZOOM_TOTAL == 0) {
-                auto_zoom_in = true;
-            } else if (ZOOM_TOTAL >= cache_get_last_zoom()) {
-                auto_zoom_in = false;
-                zoom = cache_get_last_zoom();
-                zoom_fraction = 0;
+    // if we're not currently performing a save file then
+    // update the ctr and/or zoom in one of the following ways:
+    // - auto zoom
+    // - slide show
+    // - due to pan/zoom controls
+    if (save_file_ctrl == 0) {
+        // if mode is auto_zoom then increment or decrement the zoom,
+        // when zoom limit is reached then reverse auto zoom direction
+        if (mode == MODE_AUTOZ) {
+            if (!auto_zoom_pause) {
+                zoom_step(auto_zoom_in ? 4 : -4);
+                if (ZOOM_TOTAL == 0) {
+                    auto_zoom_in = true;
+                } else if (ZOOM_TOTAL >= cache_get_last_zoom()) {
+                    auto_zoom_in = false;
+                    zoom = cache_get_last_zoom();
+                    zoom_fraction = 0;
+                }
             }
         }
-    }
 
-    // if mode is slide-show then the files are displayed for SLIDE_SHOW_INTVL_US
-    if (mode == MODE_SHOW) {
-        if ((max_file_info > 0) &&
-            (microsec_timer() > slide_show_time_us + SLIDE_SHOW_INTVL_US)) 
-        {
-            if (slide_show_time_us != 0) {
-                slide_show_idx = (slide_show_idx + 1) % max_file_info;
+        // if mode is slide-show then the files are displayed for SLIDE_SHOW_INTVL_US
+        if (mode == MODE_SHOW) {
+            if ((max_file_info > 0) &&
+                (microsec_timer() > slide_show_time_us + SLIDE_SHOW_INTVL_US)) 
+            {
+                if (slide_show_time_us != 0) {
+                    slide_show_idx = (slide_show_idx + 1) % max_file_info;
+                }
+                show_file(slide_show_idx);
+                slide_show_time_us = microsec_timer();
             }
-            show_file(slide_show_idx);
-            slide_show_time_us = microsec_timer();
         }
-    }
 
-    // inform caching code of the possibly updated ctr and zoom
-    cache_param_change(ctr, zoom, debug_force_cache_thread_run);
-    debug_force_cache_thread_run = false;
+        // inform caching code of the possibly updated ctr and zoom
+        cache_param_change(ctr, zoom, debug_force_cache_thread_run);
+        debug_force_cache_thread_run = false;
+    }
 
     // get the cached mandelbrot set values; and
     // convert them to pixel color values
@@ -466,6 +459,13 @@ static void render_hndlr_mbs(pane_cx_t *pane_cx)
 
     // determine the source area of the texture, (based on the zoom_fraction)
     // that will be rendered by the call to sdl_render_scaled_texture_ex below
+    //
+    // note: The CACHE_WIDTH and HEIGHT are both 200 larger than the amount
+    //       of the cache being rendered. The CACHE_WIDTH/HEIGHT=1200,700, thus the
+    //       size of the cache rendered is 1000x500. This 1000x500 array of pixel
+    //       values in the cache are scaled and rendered to the entire display.
+    //       Therefore, a display with a width to height ratio of 2 will accurately
+    //       portray the Mandelbrot set.
     rect_t src;
     double tmp = pow(2, -zoom_fraction);
     src.w = (CACHE_WIDTH - 200) * tmp;
@@ -480,6 +480,14 @@ static void render_hndlr_mbs(pane_cx_t *pane_cx)
     // display info in upper left corner
     if (display_info) {
         display_info_proc(pane);
+    }
+
+    // when saving file is active then don't show the controls;
+    // this may help by preventing variables (in particular ctr and zoom) from
+    // being updated while saving a file;
+    // note - this is very likely not needed
+    if (save_file_ctrl != 0) {
+        return;
     }
 
     // if mode is normal then register for PAN/ZOOM via MOUSE_MOTION event and
@@ -585,13 +593,13 @@ static void render_hndlr_mbs(pane_cx_t *pane_cx)
                 SDL_EVENT_MBS_ZIN, SDL_EVENT_TYPE_MOUSE_CLICK, pane_cx);
 
         // SAVE or SVZM 
-        if (cache_thread_percent_complete() == 100) {
+        if (cache_get_num_zoom_lvls_completed() == MAX_ZOOM) {
             x = pane->w*.70-4*fcw/2;
             y = pane->h-fch;
             sdl_render_text_and_register_event(
                     pane, x, y, FONTSZ_LARGE, "SVZM", SDL_LIGHT_BLUE, SDL_BLACK,
                     SDL_EVENT_MBS_SVZM, SDL_EVENT_TYPE_MOUSE_CLICK, pane_cx);
-        } else if (cache_thread_first_zoom_lvl_is_finished()) {
+        } else if (cache_get_num_zoom_lvls_completed() >= 1) {
             x = pane->w*.70-4*fcw/2;
             y = pane->h-fch;
             sdl_render_text_and_register_event(
@@ -745,10 +753,9 @@ static int event_hndlr_mbs(pane_cx_t *pane_cx, sdl_event_t *event)
         display_info = !display_info;
         break;
     case SDL_EVENT_MBS_HIDE: {
-        static bool once = true;
-        if (once) {
+        if (tap_for_ctrls_alert_needed) {
             set_alert(SDL_WHITE, "TAP BOTTOM LEFT FOR CTRLS");
-            once = false;
+            tap_for_ctrls_alert_needed = false;
         }
         ctrls_hidden = !ctrls_hidden;
         break; }
@@ -981,7 +988,7 @@ static void display_info_proc(rect_t *pane)
     sprintf(line[n++], "Ctr-B: %+0.9f", cimag(ctr));
     sprintf(line[n++], "Zoom:  %0.2f %d", ZOOM_TOTAL, cache_get_last_zoom());
     sprintf(line[n++], "CLUT:  %d %d", wavelen_start, wavelen_scale);   
-    sprintf(line[n++], "Cache: %d%%", cache_thread_percent_complete());
+    sprintf(line[n++], "Cache: %d%%", 100 * cache_get_num_zoom_lvls_completed() / MAX_ZOOM);
 
     // determine each line_len and the max_len
     for (i = 0; i < n; i++) {
@@ -1026,72 +1033,17 @@ static void create_file(char *params)
 
     INFO("- waiting for caching to complete ...\n");
     while (true) {
-        if (file_type == 1 && cache_thread_first_zoom_lvl_is_finished()) {
+        if (file_type == 1 && cache_get_num_zoom_lvls_completed() >= 1) {
             break;
-        } else if (file_type == 2 && cache_thread_percent_complete() == 100) {
+        } else if (file_type == 2 && cache_get_num_zoom_lvls_completed() == MAX_ZOOM) {
             break;
         }
         usleep(100000);
     }
 
     INFO("- writing file\n");
-    idx = save_file(file_type);
+    idx = cache_file_create(zoom_fraction, wavelen_start, wavelen_scale, file_type, color_lut);
     INFO("- done, idx=%d\n", idx);
-}
-
-static int save_file(int file_type)
-{
-    int             x_idx, y_idx, pxidx, w, h, idx;
-    unsigned int   *pixels;
-    unsigned short *mbsval;
-    double          x, y, x_step, y_step, x_start, y_start;
-
-    // init
-    w = (CACHE_WIDTH - 200) *  pow(2, -zoom_fraction);
-    h = (CACHE_HEIGHT - 200) *  pow(2, -zoom_fraction);
-    x_start = (CACHE_WIDTH - w) / 2;
-    y_start = (CACHE_HEIGHT - h) / 2;
-    y_step = (double)h / DIR_PIXELS_HEIGHT;
-    x_step = (double)w / DIR_PIXELS_WIDTH;
-    pxidx = 0;
-    DEBUG("w,h %d %d x_start,y_start %f %f\n", w, h, x_start, y_start);
-
-    // alloc memory for mbs values and pixels
-    mbsval = malloc(CACHE_WIDTH * CACHE_HEIGHT * 2);
-    pixels = malloc(CACHE_WIDTH * CACHE_HEIGHT * 4);
-
-    // get the mbs values
-    cache_get_mbsval(mbsval);
-
-    // create a reduced size (300x200) array of pixels, 
-    // this will be the directory image
-    y = y_start;
-    for (y_idx = 0; y_idx < DIR_PIXELS_HEIGHT; y_idx++) {
-        x = x_start;
-        for (x_idx = 0; x_idx < DIR_PIXELS_WIDTH; x_idx++) {
-            pixels[pxidx] = color_lut[
-                             mbsval[(int)nearbyint(y) * CACHE_WIDTH  +  (int)nearbyint(x)]
-                                        ];
-            pxidx++;
-            x = x + x_step;
-        }
-        y = y + y_step;
-    }
-
-    // create the file, and set an alert to indicate the file has been created
-    idx = cache_file_create(ctr, zoom, zoom_fraction, wavelen_start, wavelen_scale, pixels);
-
-    // free memory
-    free(mbsval);
-    free(pixels);
-
-    // the above call to cache_file_created just created a file containing the 
-    // file header (cache_file_info_t); the call to cache_file_update adds the mbsvals for
-    // either (when file_type==1) the current zoom level, or (when file_type==2) all zoom levels
-    cache_file_update(idx, file_type);
-
-    // return idx
-    return idx;
 }
 
 static void show_file(int idx)

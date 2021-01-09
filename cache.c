@@ -11,8 +11,6 @@
 #define MAGIC_MBS_FILE              0x5555555500000202
 #define MAGIC_FFCE                  0x11223344
 
-#define CTR_INVALID                 (999 + 0 * I)
-
 #define MBSVAL_BYTES                (CACHE_HEIGHT*CACHE_WIDTH*2)
 
 #define PATHNAME(fn) \
@@ -116,8 +114,7 @@ static int       cache_last_zoom;
 
 static spiral_t  cache_initial_spiral;
 static int       cache_thread_request;
-static bool      cache_thread_first_zoom_lvl_finished;
-static int       cache_thread_percent_done;
+static int       cache_num_zoom_lvls_completed;
 
 static char      cache_dir[200];
 
@@ -139,10 +136,13 @@ static void cache_spiral_get_next(spiral_t *s, int *x, int *y);
 
 // -----------------  INITIALIZATION  -------------------------------------------------
 
-void cache_init(void)
+void cache_init(complex_t initial_ctr)
 {
     pthread_t id;
     int       z;
+
+    // a small offset makes a better display of the initial mbs display
+    #define DELTA  (cp->pixel_size/5 * I)
 
     cache_spiral_init(&cache_initial_spiral, CACHE_WIDTH/2, CACHE_HEIGHT/2);
 
@@ -152,11 +152,11 @@ void cache_init(void)
         cp->mbsval = malloc(MBSVAL_BYTES);
 
         memset(cp->mbsval, 0xff, MBSVAL_BYTES);
-        cp->ctr         = CTR_INVALID;
         cp->zoom        = z;
         cp->pixel_size  = PIXEL_SIZE_AT_ZOOM0 * pow(2,-z);
         cp->spiral      = cache_initial_spiral;
-        cp->spiral_done = true;
+        cp->spiral_done = false;
+        cp->ctr         = initial_ctr + DELTA;
     }
 
     cache_file_init();
@@ -214,14 +214,16 @@ void cache_get_mbsval(unsigned short *mbsval)
     int i;
     cache_t *cp = &cache[cache_zoom];
 
+#if 0
     if ((fabs(creal(cp->ctr) - creal(cache_ctr)) > 1.1 * cp->pixel_size) ||
         (fabs(cimag(cp->ctr) - cimag(cache_ctr)) > 1.1 * cp->pixel_size))
     {
-        FATAL("cache_zoom=%d cp->ctr=%lg+%lgI cache_ctr=%lg+%lgI\n",
+        WARN("cache_zoom=%d LARGE pixel offset = %f %f\n",
               cache_zoom,
-              creal(cp->ctr), cimag(cp->ctr),
-              creal(cache_ctr), cimag(cache_ctr));
+              fabs(creal(cp->ctr) - creal(cache_ctr)) / cp->pixel_size,
+              fabs(cimag(cp->ctr) - cimag(cache_ctr)) / cp->pixel_size);
     }
+#endif
 
     for (i = CACHE_HEIGHT-1; i >= 0; i--) {
         memcpy(mbsval, &(*cp->mbsval)[i][0], CACHE_WIDTH * 2);
@@ -404,44 +406,139 @@ static void cache_file_copy_assets_to_internal_storage(void)
     list_asset_files_free(max, pathnames);
 }
 
-int cache_file_create(complex_t ctr, int zoom, double zoom_fraction, int wavelen_start, int wavelen_scale,
-                      unsigned int *dir_pixels)
+int cache_file_create(double zoom_fraction, int wavelen_start, int wavelen_scale,
+                      int file_type, unsigned int *color_lut)
 {
-    int                fd, idx;
+    int                fd;
     char               file_name[100];
     file_format_t      file;
     cache_file_info_t *fi = &file.fi;
 
-    // This routine creates a new save place file in the MBS_CACHE dir. 
-    // The created file does not contain any cached mbs values, but
-    // just contains the values needed to recreate the mbs image (such as ctr, zoom and 
-    // color lut info). Also the directory image pixel array is included in the file.
-    // What is written to the file is considered the file's header. Subsequent calls to 
-    // the cache_file_update routine can be made to add cached mbs values to this file.
+    #define COMPRESSED_MBSVAL_DATA_BUFF_SIZE (2*1000000)
 
-    // create a new file_name
+    // save a file, where file_type:
+    // 0 - just the hdr
+    // 1 - hdr plus cached mbs value for the file's zoom level
+    // 2 - hdr plus cached mbs values for all zoom levels (useful for autozoom)
+
+    // verify file_type arg
+    if (file_type != 0 && file_type != 1 && file_type != 2) {
+        FATAL("file_type %d invalid\n", file_type);
+    }
+
+    // stop the cache_thread
+    cache_thread_issue_request(CACHE_THREAD_REQUEST_STOP);
+
+    // when requesting file_type=1 or 2 the necessary caching should 
+    // have already been completed prior to this being called; it is the
+    // caller's responsibility to ensure that the necessary caching is complete
+    if ((file_type == 1 && cache_get_num_zoom_lvls_completed() < 1) ||
+        (file_type == 2 && cache_get_num_zoom_lvls_completed() != MAX_ZOOM))
+    {
+        WARN("file_type=%d cache_get_num_zoom_lvls_completed=%d\n",
+             file_type, cache_get_num_zoom_lvls_completed());
+    }
+
+    // create the file_name
     sprintf(file_name, "mbs2_%04d.dat", ++last_file_num);
+    DEBUG("create file %s, file_type=%d\n", file_name, file_type);
 
-    // initialize file header buffer
+    // initialize file header, except fi->dir_pixels, which is below
     memset(fi, 0, sizeof(cache_file_info_t));
     fi->magic         = MAGIC_MBS_FILE;
     strcpy(fi->file_name, file_name);
-    fi->file_type     = 0;
+    fi->file_type     = file_type;
     fi->file_size     = sizeof(cache_file_info_t);    
-    fi->ctr           = ctr;
-    fi->zoom          = zoom;
+    fi->ctr           = cache_ctr;
+    fi->zoom          = cache_zoom;
     fi->zoom_fraction = zoom_fraction;
     fi->wavelen_start = wavelen_start;
     fi->wavelen_scale = wavelen_scale;
     fi->selected      = false;
-    memcpy(fi->dir_pixels, dir_pixels, sizeof(fi->dir_pixels));
 
-    // create the file
+    // initialize file header dir_pixels array
+    int             x_idx, y_idx, pxidx, w, h;
+    unsigned int   *pixels;
+    unsigned short *mbsval;
+    double          x, y, x_step, y_step, x_start, y_start;
+    // - init
+    w = (CACHE_WIDTH - 200) *  pow(2, -zoom_fraction);
+    h = (CACHE_HEIGHT - 200) *  pow(2, -zoom_fraction);
+    x_start = (CACHE_WIDTH - w) / 2;
+    y_start = (CACHE_HEIGHT + h) / 2;
+    y_step = (double)h / DIR_PIXELS_HEIGHT;
+    x_step = (double)w / DIR_PIXELS_WIDTH;
+    pxidx = 0;
+    mbsval = (*cache[cache_zoom].mbsval)[0];
+    pixels = fi->dir_pixels[0];
+    DEBUG("w,h %d %d x_start,y_start %f %f\n", w, h, x_start, y_start);
+    // - create a reduced size (300x200) array of pixels, 
+    //   this will be the directory image
+    y = y_start;
+    for (y_idx = 0; y_idx < DIR_PIXELS_HEIGHT; y_idx++) {
+        x = x_start;
+        for (x_idx = 0; x_idx < DIR_PIXELS_WIDTH; x_idx++) {
+            pixels[pxidx] = color_lut[
+                             mbsval[(int)nearbyint(y) * CACHE_WIDTH  +  (int)nearbyint(x)]
+                                        ];
+            pxidx++;
+            x = x + x_step;
+        }
+        y = y - y_step;
+    }
+
+    // create the file, and write the file header
     OPEN(file_name, fd, O_CREAT|O_EXCL|O_WRONLY);
     WRITE(file_name, fd, fi, sizeof(cache_file_info_t));
+
+    // if file_type is 0 then there is no more to write to the file;
+    // goto finish to wrap up
+    if (file_type == 0) {
+        goto finish;
+    }
+
+    // write the desired zoom level(s)
+    Bytef              *compressed_mbsval_data;
+    int                 z, rc;
+    uLongf              destlen;
+    file_format_cache_t ffce;
+
+    compressed_mbsval_data = malloc(COMPRESSED_MBSVAL_DATA_BUFF_SIZE);
+    for (z = 0; z < MAX_ZOOM; z++) {
+        if ((file_type == 1 && z == cache_zoom) || (file_type == 2)) {
+            // compress cache[z].mbsval to compressed_mbsval_data
+            DEBUG("- writing zoom lvl %d\n", z);
+            destlen = COMPRESSED_MBSVAL_DATA_BUFF_SIZE;
+            rc = compress(compressed_mbsval_data, &destlen, (void*)cache[z].mbsval, MBSVAL_BYTES);
+            if (rc != Z_OK) {
+                FATAL("compress rc=%d\n", rc);
+            }
+
+            // construct file_format_cache_t (ffce)
+            memset(&ffce,0,sizeof(ffce));
+            ffce.magic = MAGIC_FFCE;
+            ffce.cache = cache[z];    
+            ffce.cache.mbsval = NULL;
+            ffce.compressed_mbsval_datalen = destlen;
+
+            // write the ffce and compressed_mbsval_data
+            WRITE(file_name, fd, &ffce,  offsetof(file_format_cache_t,compressed_mbsval_data));
+            WRITE(file_name, fd, compressed_mbsval_data, destlen);
+        }
+    }
+    free(compressed_mbsval_data);
+
+    // update the file hdr's file_size field
+    STAT(file_name, fd, fi->file_size);
+    LSEEK(file_name, fd, offsetof(cache_file_info_t,file_size));
+    WRITE(file_name, fd, &fi->file_size, sizeof(fi->file_size));
+
+finish:
+    // save the new fi at the end of the file_info array
     CLOSE(file_name, fd);
 
-    // save the new fi at the end of the file_info array
+    // add fi to the end of the file_info array, and increment max_file_info
+    int idx;
     idx = max_file_info;
     if (file_info[idx] != NULL) {
         FATAL("file_info[%d] not NULL\n", idx);
@@ -450,7 +547,11 @@ int cache_file_create(complex_t ctr, int zoom, double zoom_fraction, int wavelen
     *file_info[idx] = *fi;
     max_file_info++;
 
+    // run the cache_thread, the cache thread restarts from the begining
+    cache_thread_issue_request(CACHE_THREAD_REQUEST_RUN);
+
     // return the idx of the new file_info entry
+    DEBUG("returning idx %d\n", idx);
     return idx;
 }
 
@@ -566,88 +667,11 @@ void cache_file_read(int idx)
     cache_param_change(fi->ctr, fi->zoom, true);
 }
 
-void cache_file_update(int idx, int file_type)
-{
-    cache_file_info_t *fi = IDX_TO_FI(idx);
-    int z, fd, rc;
-    Bytef *compressed_mbsval_data;
-    uLongf destlen;
-    file_format_cache_t ffce;
-
-    #define COMPRESSED_MBSVAL_DATA_BUFF_SIZE (10*1000000)
-
-    DEBUG("idx=%d fn=%s file_type=%d->%d\n", idx, fi->file_name, fi->file_type, file_type);
-
-    // This routine will re-write the specified file using the requested file_type.
-    // File_type:
-    // 0 - just the hdr (255K file size)
-    // 1 - hdr plus cached mbs value for the file's zoom level (7.9M file size)
-    // 2 - hdr plus cached mbs values for all zoom levels (355M file size);
-    //     this is useful if autozoom is going to be used to view all zoom levels
-
-    // when called for file_type 1 or 2 the cache_ctr and cache_zoom
-    // are supposed to be equal to the file_info
-    if (file_type == 1 || file_type == 2) {
-        if (fi->ctr != cache_ctr || fi->zoom != cache_zoom) {
-            FATAL("cache_ctr/zoom don't match file_info\n");
-        }
-    }
-
-    // open for writing, and truncate
-    OPEN(fi->file_name, fd, O_TRUNC|O_WRONLY);
-
-    // write the file header
-    fi->file_type = file_type;
-    WRITE(fi->file_name, fd, fi, sizeof(cache_file_info_t));
-
-    // allocate buffer for the compressed_mbsval_data
-    compressed_mbsval_data = malloc(COMPRESSED_MBSVAL_DATA_BUFF_SIZE);
-    if (compressed_mbsval_data == NULL) {
-        FATAL("malloc %d failed\n", ffce.compressed_mbsval_datalen);
-    }
-
-    // write the desired zoom levels
-    for (z = 0; z < MAX_ZOOM; z++) {
-        if ((file_type == 1 && z == fi->zoom) || (file_type == 2)) {
-            DEBUG("- writing zoom lvl %d\n", z);
-
-            // compress cache[z].mbsval to compressed_mbsval_data
-            destlen = COMPRESSED_MBSVAL_DATA_BUFF_SIZE;
-            rc = compress(compressed_mbsval_data, &destlen, (void*)cache[z].mbsval, MBSVAL_BYTES);
-            if (rc != Z_OK) {
-                FATAL("compress rc=%d\n", rc);
-            }
-
-            // construct file_format_cache_t (ffce)
-            memset(&ffce,0,sizeof(ffce));
-            ffce.magic = MAGIC_FFCE;
-            ffce.cache = cache[z];    
-            ffce.cache.mbsval = NULL;
-            ffce.compressed_mbsval_datalen = destlen;
-
-            // write the ffce and compressed_mbsval_data
-            WRITE(fi->file_name, fd, &ffce,  offsetof(file_format_cache_t,compressed_mbsval_data));
-            WRITE(fi->file_name, fd, compressed_mbsval_data, destlen);
-        }
-    }
-
-    // free compressed_mbsval_data
-    free(compressed_mbsval_data);
-
-    // update the file hdr's file_size field
-    STAT(fi->file_name, fd, fi->file_size);
-    LSEEK(fi->file_name, fd, offsetof(cache_file_info_t,file_size));
-    WRITE(fi->file_name, fd, &fi->file_size, sizeof(fi->file_size));
-
-    // close
-    CLOSE(fi->file_name, fd);
-}
-
 // -----------------  ADJUST MBSVAL CENTER  -------------------------------------------
 
 static void cache_adjust_mbsval_ctr(cache_t *cp)
 {
-    int old_y, new_y, delta_x, delta_y;
+    int64_t  old_y, new_y, delta_x, delta_y;
     unsigned short (*new_mbsval)[CACHE_HEIGHT][CACHE_WIDTH];
     unsigned short (*old_mbsval)[CACHE_HEIGHT][CACHE_WIDTH];
 
@@ -657,7 +681,7 @@ static void cache_adjust_mbsval_ctr(cache_t *cp)
     // If the cache center has changed less dramatically then the cached mbs values are
     // copied from the current array of cached mbs values to a new array, adjusting for
     // the change in the center (delta_x,delta_y). In this case the new array will have 
-    // some areas where the mbs values are MBSVAL_NOT_COMPUTED.
+    // some areas where the mbs values are MBSVAL_NOT_COMPUTED (0xffff).
 
     delta_x = nearbyint((creal(cp->ctr) - creal(cache_ctr)) / cp->pixel_size);
     delta_y = nearbyint((cimag(cp->ctr) - cimag(cache_ctr)) / cp->pixel_size);
@@ -695,7 +719,7 @@ static void cache_adjust_mbsval_ctr(cache_t *cp)
 
     free(cp->mbsval);
     cp->mbsval      = new_mbsval;
-    cp->ctr         = cache_ctr;
+    cp->ctr        -= (delta_x * cp->pixel_size + delta_y * cp->pixel_size * I);
     cp->spiral      = cache_initial_spiral;
     cp->spiral_done = false;
 }
@@ -707,19 +731,14 @@ static void cache_adjust_mbsval_ctr(cache_t *cp)
 // in on a location, then the cache thread will precompute cache values at subsequent 
 // zoom levels for the same location.
 
-bool cache_thread_first_zoom_lvl_is_finished(void)
-{
-    return cache_thread_first_zoom_lvl_finished;
-}
-
-int cache_thread_percent_complete(void)
-{
-    return cache_thread_percent_done;
-}
-
 int cache_get_last_zoom(void)
 {
     return cache_last_zoom;
+}
+
+int cache_get_num_zoom_lvls_completed(void)
+{
+    return cache_num_zoom_lvls_completed;
 }
 
 static void *cache_thread(void *cx)
@@ -740,7 +759,7 @@ static void *cache_thread(void *cx)
                 complex_t c; \
                 c = ((((_idx_a)-(CACHE_WIDTH/2)) * (_cp)->pixel_size) -  \
                      (((_idx_b)-(CACHE_HEIGHT/2)) * (_cp)->pixel_size) * I) +  \
-                    cache_ctr; \
+                    cp->ctr; \
                 (*(_cp)->mbsval)[_idx_b][_idx_a] = mandelbrot_set(c); \
                 mbs_calc_count++; \
             } else { \
@@ -786,10 +805,14 @@ restart:
         // handle stop request received when we are already stopped
         CHECK_FOR_STOP_REQUEST;
 
-        // the request must be a run request; ack the request
+        // the request must be a run request:
+        // - zero cache_num_zoom_lvls_completed, and
+        // - ack the request
         if (cache_thread_request != CACHE_THREAD_REQUEST_RUN) {
             FATAL("invalid cache_thread_request %d\n", cache_thread_request);
         }
+        cache_num_zoom_lvls_completed = 0;
+        __sync_synchronize();
         cache_thread_request = CACHE_THREAD_REQUEST_NONE;
         __sync_synchronize();
 
@@ -812,14 +835,12 @@ restart:
         // extending to the window size dimensions.
         DEBUG("STARTING\n");
         for (n = 0; n < MAX_ZOOM; n++) {
-            CHECK_FOR_STOP_REQUEST;
+            // publish the number of zoom lvls that have been completed
+            cache_num_zoom_lvls_completed = n;
+            __sync_synchronize();
 
-            // provide first_zoom_lvl_finished status
-            if (n == 1) {
-                cache_thread_first_zoom_lvl_finished = true;
-                __sync_synchronize();
-                DEBUG("FINISHED lvl0\n");
-            }
+            // if a stop request has been issued then goto restart
+            CHECK_FOR_STOP_REQUEST;
 
             // since it is likely the cache thread has been requested to run becuae
             // the cache center has changed, we need to first call cache_adjust_mbsval_ct
@@ -829,7 +850,6 @@ restart:
             // note that the cache_adjust_mbsval_ctr routine will reset the 
             // spiral if an adjustment was made
             DEBUG("starting: idx=%d lvl=%d\n", n, zoom_lvl_tbl[n]);
-            cache_thread_percent_done = 100 * n / MAX_ZOOM;
             cp = &cache[ zoom_lvl_tbl[n] ];
             cache_adjust_mbsval_ctr(cp);
 
@@ -868,9 +888,13 @@ restart:
             cache_mbsval_all_same_optimization(zoom_lvl_tbl[n]);
         }
 
-        // caching of all zoom levels has completed
-        cache_thread_percent_done = 100;
+        // publish the number of zoom lvls that have been completed
+        if (n != MAX_ZOOM) {
+            FATAL("bug n=%d should be MAX_ZOOM\n", n);
+        }
+        cache_num_zoom_lvls_completed = n;
         __sync_synchronize();
+
         DEBUG("ALL FINISHED \n");
     }
 }
@@ -919,10 +943,6 @@ static void cache_thread_get_zoom_lvl_tbl(int *zoom_lvl_tbl)
 
 static void cache_thread_issue_request(int req)
 {
-    // reset cache thread progress status flags
-    cache_thread_first_zoom_lvl_finished = false;
-    cache_thread_percent_done = 0;
-
     // set the cache_thread_request; the cache_thread is polling on this variable
     __sync_synchronize();
     cache_thread_request = req;
@@ -949,9 +969,17 @@ static void cache_mbsval_all_same_optimization(int lvl_arg)
         FATAL("spiral_done == false\n");
     }
 
-    // check if all values are the same; and return if not so
+    // get the first mbsval, which will be used to compare against the other 
+    // mbs values in the code below; and 
+    // if the first_val is MBSVAL_NOT_COMPUTED then just return because 
+    // we can't know if the values are all the same until they are all computed
     mbsval = (*cp->mbsval)[0];
     first_val = mbsval[0];
+    if (first_val == MBSVAL_NOT_COMPUTED) {
+        return;
+    }
+
+    // check if all values are the same; and return if not so
     for (i = 0; i < CACHE_WIDTH*CACHE_HEIGHT; i++) {
         if (mbsval[i] != first_val) {
             return;

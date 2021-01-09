@@ -81,17 +81,17 @@ int                 max_file_info;
 
 int mandelbrot_set(complex_t c);
 
-void cache_init(void);
+void cache_init(complex_t initial_ctr);
 void cache_param_change(complex_t ctr, int zoom, bool force);
 void cache_get_mbsval(unsigned short *mbsval);
 
 bool cache_thread_first_zoom_lvl_is_finished(void);
 int cache_thread_percent_complete(void);
 int cache_get_last_zoom(void);
+int cache_get_num_zoom_lvls_completed(void);
 
-int cache_file_create(complex_t ctr, int zoom, double zoom_fraction, int wavelen_start, int wavelen_scale,
-                      unsigned int *dir_pixels);
-void cache_file_update(int idx, int file_type);
+int cache_file_create(double zoom_fraction, int wavelen_start, int wavelen_scale,
+                      int file_type, unsigned int *color_lut);
 void cache_file_delete(int idx);
 void cache_file_read(int idx);
 
