@@ -1,15 +1,12 @@
-XXX TBD
 ==============================
 INTRO
 ==============================
 
-Date Sep 15, 2020
+Date Jan 9, 2021
 
 This is a guide on building and installing SDL Android Apps.
-This guide's focus is installing the Reversi App, built from the 
-source code in the parent directory.
 
-My development system is Fedora 31.
+My development system is Fedora.
 My device is Motorola's Moto G Power.
 
 Reference Web Sites
@@ -114,7 +111,7 @@ This sample App will be installed as 'Game' App on your device.
 Try running it.
 
 ==============================
-BUILD REVERSI APP
+BUILD THIS APP
 ==============================
 
 First follow the steps in these sections:
@@ -129,16 +126,15 @@ Sanity Checks:
     List of devices attached
     ZY227NX9BT	device
 - In another terminal run 'adb shell logcat -s SDL/APP'. 
-  Debug prints should be shown once the reversi app is built, installed, and run.
+  Debug prints should be shown once the app is built, installed, and run.
 
 Setup the build directory structure:
 - cd android-project
 - do_setup 
-  This should create the SDL2-2.0.12, and SDL2-2.0.12/build/org.sthaid.reversi dirs.
+  This should create the SDL2-2.0.12, and SDL2-2.0.12/build/org.sthaid.mbs2 dirs.
 
 Build and install on your device, this installs a 'Debug' build.
 - do_debug_build_and_install
-  The installed app name is 'Reversi'.
 
 Refer to the next section on how to make a 'Release' build which can be 
 published on the Google Play store.
@@ -149,7 +145,7 @@ PUBLISH ON GOOGLE PLAY
 
 Building Release APK:
 - do_setup:                  creates the SDL2 directory structure
-- do_release_genkey:         do this just once; the reversi.keystore that 
+- do_release_genkey:         do this just once; the mbs2.keystore that 
                              is checked in can only be used by me; be sure
                              to not misplace the keystore file, as it will
                              be needed to make future updates on Google Play
@@ -166,12 +162,12 @@ Publish on Google Play:
   - Privacy Policy URL
     . Privacy policy is a complex subject, websites are available to create and
       host privacy policy
-    . Since reversi doesn't collect personal data, I provide privacy_policy.md,
+    . Since this app doesn't collect personal data, I provide privacy_policy.md,
       on github, containing "No personal data is collected.".
   - App Icon 512x512
     . I used setup_files/create_ic_launcher.c.
   - Feature Graphic 1024x500
-    . I captured a screenshot from the linux version of Reversi, which is landscape;
+    . I captured a screenshot from the linux version of this program,
       and scaled to 1024x500, using proj_jpeg_merge/image_merge program.
          $ ./image_merge -o 1024x500 screenshot.jpg           
   - Two phone screenshots
@@ -179,7 +175,7 @@ Publish on Google Play:
   - Signed release apk
     . app/build/outputs/apk/release/app-release-aligned.apk
   
-When publishing was completed, the following release warnings were displayed,
+When publishing was completed, the following release warnings may be displayed,
 these don't seem serious.
 1) This APK results in unused code and resources being sent to users. 
    Your app could be smaller if you used the Android App Bundle. 
@@ -191,8 +187,6 @@ these don't seem serious.
 3) This APK contains native code, and you've not uploaded debug symbols. 
    We recommend you upload a symbol file to make your crashes and ANRs easier 
    to analyze and debug. Learn More
-
-Note - the size of reversi release APK is just 3.6M.
 
 References, regarding signing:
 - https://stackoverflow.com/questions/10930331/how-to-sign-an-already-compiled-apk
@@ -259,7 +253,7 @@ commonly used adb commands:
 - adb shell logcat -s SDL/APP               # view debug prints
 - adb install -r ./app/build/outputs/apk/debug/app-debug.apk  
                                             # install (usually done by gradle)
-- adb uninstall  org.sthaid.reversi         # uninstall
+- adb uninstall  org.sthaid.mbs2            # uninstall
 - adb shell getprop ro.product.cpu.abilist  # get list of ABI supported by the device
 
 adb
