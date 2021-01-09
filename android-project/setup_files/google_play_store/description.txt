@@ -1,0 +1,9 @@
+This program provides the ability to explore the Mandelbrot Set.
+
+Features include:
+- Pan and Zoom
+- Save Favorite Places
+- Slide Show
+- Auto Zoom
+- Adjustable Color Lookup Table
+
