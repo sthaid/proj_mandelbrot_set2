@@ -169,7 +169,9 @@ Publish on Google Play:
   - Feature Graphic 1024x500
     . I captured a screenshot from the linux version of this program,
       and scaled to 1024x500, using proj_jpeg_merge/image_merge program.
-         $ ./image_merge -o 1024x500 screenshot.jpg           
+         $ image_merge -f screenshot_1024x500.jpg -o 1024x500 ../../../screenshot_210109_084345.jpg 
+         w
+         q
   - Two phone screenshots
     . Use this to caputure screenshot "adb shell screencap -p > img.png".
   - Signed release apk
