@@ -737,6 +737,12 @@ static int event_hndlr_mbs(pane_cx_t *pane_cx, sdl_event_t *event)
                  fi->wavelen_start, fi->wavelen_scale);
         }
         break; }
+    case SDL_EVENT_KEY_F(4):  // Linux version
+        INFO("center        = (%.18f + %.18f * I);\n", creal(ctr), cimag(ctr));
+        INFO("zoom          = %0.2f;\n", ZOOM_TOTAL);
+        INFO("wavelen_start = %d;\n", wavelen_start);
+        INFO("wavelen_scale = %d;\n", wavelen_scale);
+        break;
 
     // --- GOTO HELP DISPLAY ---
     case SDL_EVENT_MBS_HELP:
@@ -779,39 +785,11 @@ static int event_hndlr_mbs(pane_cx_t *pane_cx, sdl_event_t *event)
     // --- MODE_NORMAL: PAN & ZOOM ---
     case SDL_EVENT_MBS_MOUSE_MOTION_PAN: {
         double pixel_size = PIXEL_SIZE_AT_ZOOM0 * pow(2,-ZOOM_TOTAL);
-        int dx, dy;
-        // if not the end of mouse motion then update ctr based on mouse_motion.delta_x/y;
-        // otherwise (when mouse_motion.end is set and there was no total motion) the
-        // ctr will be updated to be the location of the mouse
-        if (!event->mouse_motion.end) {
-            ctr += -(event->mouse_motion.delta_x * pixel_size * ((double)(CACHE_WIDTH - 200) / pane->w) ) +
-                   -(event->mouse_motion.delta_y * pixel_size * ((double)(CACHE_HEIGHT - 200) / pane->h)) * I;
-        } else {
-            if (event->mouse_motion.end_abs_total_delta_x == 0 &&
-                event->mouse_motion.end_abs_total_delta_y == 0)
-            {
-                dx = (pane->w/2 - event->mouse_motion.x);
-                dy = (pane->h/2 - event->mouse_motion.y);
-                ctr += -(dx * pixel_size * ((double)(CACHE_WIDTH - 200) / pane->w) ) +
-                       -(dy * pixel_size * ((double)(CACHE_HEIGHT - 200) / pane->h)) * I;
-            }
-        }
+        ctr += -(event->mouse_motion.delta_x * pixel_size * ((double)(CACHE_WIDTH - 200) / pane->w) ) +
+               -(event->mouse_motion.delta_y * pixel_size * ((double)(CACHE_HEIGHT - 200) / pane->h)) * I;
         break; }
     case SDL_EVENT_MBS_MOUSE_MOTION_ZOOM: {
-        double pixel_size = PIXEL_SIZE_AT_ZOOM0 * pow(2,-ZOOM_TOTAL);
-        int dx, dy;
-        if (!event->mouse_motion.end) {
-            zoom_step(-event->mouse_motion.delta_y);
-        } else {
-            if (event->mouse_motion.end_abs_total_delta_x == 0 &&
-                event->mouse_motion.end_abs_total_delta_y == 0)
-            {
-                dx = (pane->w/2 - event->mouse_motion.x);
-                dy = (pane->h/2 - event->mouse_motion.y);
-                ctr += -(dx * pixel_size * ((double)(CACHE_WIDTH - 200) / pane->w) ) +
-                       -(dy * pixel_size * ((double)(CACHE_HEIGHT - 200) / pane->h)) * I;
-            }
-        }
+        zoom_step(-event->mouse_motion.delta_y);
         break; }
     case SDL_EVENT_MBS_ZIN:
         zoom_step(40);
