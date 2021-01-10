@@ -116,6 +116,7 @@ void sdl_wavelen_to_rgb(double wavelength, uint8_t *r, uint8_t *g, uint8_t *b);
 void draw_launcher(int width, int height)
 {
     double complex c, center;
+    double zoom;
     int idxa, idxb;
     unsigned short mbsval;
     unsigned int pixel;
@@ -123,10 +124,12 @@ void draw_launcher(int width, int height)
     double pixel_size;
 
     // params
-    wavelen_start = 425;
-    wavelen_scale = 8;
-    pixel_size    = 2. / width;
-    center        = (-0.50 + 0.0*I);
+    center        = (-0.155305496773275653 + -1.027685767199620015 * I);
+    zoom          = 24.5;
+    wavelen_start = 570;
+    wavelen_scale = 2;
+
+    pixel_size = 2. / width * pow(2,-zoom);
 
     // initialize the color lookup table
     init_color_lut();
